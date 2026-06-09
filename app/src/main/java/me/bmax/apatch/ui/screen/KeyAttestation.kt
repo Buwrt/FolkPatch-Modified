@@ -61,7 +61,7 @@ private fun execWithOutput(command: String): Pair<Int, String> {
         val shell = getRootShell()
         val result = shell.newJob().add(command).exec()
         val stdout = result.out?.joinToString("\n") ?: ""
-        Pair(result.isSuccess, stdout)
+        Pair(if (result.isSuccess) 0 else 1, stdout)
     } catch (e: Exception) {
         Pair(-1, "")
     }
@@ -1190,7 +1190,17 @@ class KeyAttestationViewModel : ViewModel() {
                 CertificateInfo.parse(certs, certInfos)
                 val result = AttestationData.parseCertificateChain(certs)
                 attestationData = result
-                certificateChain = certs.toByteArray()
+                certificateChain = try {
+                    val bos = java.io.ByteArrayOutputStream()
+                    val dos = java.io.DataOutputStream(bos)
+                    dos.writeInt(certs.size)
+                    for (cert in certs) {
+                        dos.writeInt(cert.encoded.size)
+                        dos.write(cert.encoded)
+                    }
+                    dos.flush()
+                    bos.toByteArray()
+                } catch (_: Exception) { null }
                 error = null
             } catch (e: Exception) {
                 error = e.message ?: "Unknown error"
