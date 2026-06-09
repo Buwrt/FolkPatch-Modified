@@ -421,13 +421,11 @@ private fun FullCertificateCard(index: Int, certInfo: CertificateInfo, context: 
             InfoLabelValueRow("签名算法", cert.sigAlgName ?: "N/A")
 
             // Fingerprint SHA-256
-            try {
-                val fingerprint = cert.let {
-                    val md = java.security.MessageDigest.getInstance("SHA-256")
-                    md.digest(it.encoded).joinToString("") { b -> "%02x".format(b) }
-                }
-                InfoLabelValueRowWithCopy("Fingerprint (SHA-256)", fingerprint, context)
-            } catch (_: Exception) {}
+            val fingerprint = try {
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                md.digest(cert.encoded).joinToString("") { b -> "%02x".format(b) }
+            } catch (_: Exception) { "N/A" }
+            InfoLabelValueRowWithCopy("Fingerprint (SHA-256)", fingerprint, context)
 
             // Version
             InfoLabelValueRow("版本", "${cert.version + 1}")
@@ -912,46 +910,46 @@ private fun CertificateChainItem(index: Int, certInfo: CertificateInfo, context:
         }
 
         // Fingerprint
-        try {
-            val fingerprint = java.security.MessageDigest.getInstance("SHA-256")
+        val fingerprint = try {
+            java.security.MessageDigest.getInstance("SHA-256")
                 .digest(cert.encoded)
                 .joinToString("") { b -> "%02x".format(b) }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        } catch (_: Exception) { "N/A" }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Fingerprint: ",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                fingerprint,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("fingerprint", fingerprint))
+                    Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.size(28.dp)
             ) {
-                Text(
-                    "Fingerprint: ",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
+                Icon(
+                    Icons.Outlined.ContentCopy,
+                    contentDescription = "复制",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    fingerprint,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("fingerprint", fingerprint))
-                        Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.ContentCopy,
-                        contentDescription = "复制",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
-        } catch (_: Exception) {}
+        }
     }
 }
 
@@ -1567,7 +1565,7 @@ private fun formatDateShort(date: Date?): String {
 }
 
 private fun formatDate(date: Date?): String {
-    return date?.let { DateFormat.getDateTimeInstance().format(it) } ?: "N/A"
+    return date?.let { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(it) } ?: "N/A"
 }
 
 private fun shortenDn(dn: String): String {
