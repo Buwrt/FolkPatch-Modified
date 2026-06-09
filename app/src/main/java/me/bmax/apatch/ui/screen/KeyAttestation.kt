@@ -608,15 +608,15 @@ fun CertificateItem(index: Int, certInfo: CertificateInfo) {
 
         // Always show: serial, issuer, validity
         val serialNumber = cert.serialNumber?.toString(16)?.uppercase() ?: ""
-        InfoRow(label = stringResource(R.string.ka_issuer), value = cert.issuerX500Principal?.name ?: "")
-        InfoRow(label = stringResource(R.string.cert_not_before), value = formatDate(cert.notBefore))
-        InfoRow(label = stringResource(R.string.cert_not_after), value = formatDate(cert.notAfter))
+        KaInfoRow(label = stringResource(R.string.ka_issuer), value = cert.issuerX500Principal?.name ?: "")
+        KaInfoRow(label = stringResource(R.string.cert_not_before), value = formatDate(cert.notBefore))
+        KaInfoRow(label = stringResource(R.string.cert_not_after), value = formatDate(cert.notAfter))
 
         if (expanded) {
             Spacer(Modifier.height(4.dp))
-            InfoRow(label = stringResource(R.string.ka_subject), value = cert.subjectX500Principal?.name ?: "")
+            KaInfoRow(label = stringResource(R.string.ka_subject), value = cert.subjectX500Principal?.name ?: "")
             if (serialNumber.isNotEmpty()) {
-                InfoRow(label = stringResource(R.string.ka_serial), value = serialNumber)
+                KaInfoRow(label = stringResource(R.string.ka_serial), value = serialNumber)
             }
 
             if (status != CertificateInfo.CERT_NORMAL && status != CertificateInfo.CERT_UNKNOWN) {
@@ -639,7 +639,7 @@ fun CertificateItem(index: Int, certInfo: CertificateInfo) {
 }
 
 @Composable
-fun InfoRow(label: String, value: String) {
+private fun KaInfoRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
