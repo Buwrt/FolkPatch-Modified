@@ -16,7 +16,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import io.github.vvb2060.keyattestation.AppApplication;
-import me.yuki.foly.BuildConfig;
+import me.bmax.apatch.BuildConfig;
 import rikka.shizuku.Shizuku;
 
 public class KeyStoreManager {

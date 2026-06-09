@@ -1,7 +1,5 @@
 package io.github.vvb2060.keyattestation.lang
 
-import me.yuki.foly.R
-
 class AttestationException(code: Int, cause: Throwable) : RuntimeException(cause) {
 
     companion object {
@@ -17,30 +15,30 @@ class AttestationException(code: Int, cause: Throwable) : RuntimeException(cause
         const val CODE_RKP = 9
     }
 
-    val titleResId: Int = when (code) {
-        CODE_UNAVAILABLE -> R.string.error_unavailable
-        CODE_CANT_PARSE_CERT -> R.string.error_cant_parse_cert
-        CODE_STRONGBOX_UNAVAILABLE -> R.string.error_strongbox_unavailable
-        CODE_DEVICEIDS_UNAVAILABLE -> R.string.error_deviceids_unavailable
-        CODE_OUT_OF_KEYS -> R.string.error_out_of_keys
-        CODE_OUT_OF_KEYS_TRANSIENT -> R.string.error_out_of_keys_transient
-        CODE_UNAVAILABLE_TRANSIENT -> R.string.error_unavailable_transient
-        CODE_KEYS_NOT_PROVISIONED -> R.string.error_keys_not_provisioned
-        CODE_RKP -> R.string.error_remote_key_provisioning
-        else -> R.string.error_unknown
+    val title: String = when (code) {
+        CODE_UNAVAILABLE -> "不可用"
+        CODE_CANT_PARSE_CERT -> "证书解析失败"
+        CODE_STRONGBOX_UNAVAILABLE -> "StrongBox 不可用"
+        CODE_DEVICEIDS_UNAVAILABLE -> "设备ID不可用"
+        CODE_OUT_OF_KEYS -> "密钥已耗尽"
+        CODE_OUT_OF_KEYS_TRANSIENT -> "密钥暂时耗尽"
+        CODE_UNAVAILABLE_TRANSIENT -> "暂时不可用"
+        CODE_KEYS_NOT_PROVISIONED -> "密钥未预置"
+        CODE_RKP -> "远程密钥配置失败"
+        else -> "未知错误"
     }
 
-    val descriptionResId: Int = when (code) {
-        CODE_UNAVAILABLE -> R.string.error_unavailable_summary
-        CODE_CANT_PARSE_CERT -> R.string.error_cant_parse_cert_summary
-        CODE_STRONGBOX_UNAVAILABLE -> R.string.error_strongbox_unavailable_summary
-        CODE_DEVICEIDS_UNAVAILABLE -> R.string.error_deviceids_unavailable_summary
-        CODE_OUT_OF_KEYS -> R.string.error_out_of_keys_summary
-        CODE_OUT_OF_KEYS_TRANSIENT -> R.string.error_out_of_keys_transient_summary
-        CODE_UNAVAILABLE_TRANSIENT -> R.string.error_unavailable_transient_summary
-        CODE_KEYS_NOT_PROVISIONED -> R.string.error_keys_not_provisioned_summary
-        CODE_RKP -> R.string.error_remote_key_provisioning_summary
-        else -> R.string.error_unknown
+    val description: String = when (code) {
+        CODE_UNAVAILABLE -> "KeyStore 不可用"
+        CODE_CANT_PARSE_CERT -> "无法解析认证证书"
+        CODE_STRONGBOX_UNAVAILABLE -> "设备不支持 StrongBox"
+        CODE_DEVICEIDS_UNAVAILABLE -> "设备不支持设备ID认证"
+        CODE_OUT_OF_KEYS -> "已用完所有可用密钥"
+        CODE_OUT_OF_KEYS_TRANSIENT -> "暂时用完可用密钥，请稍后重试"
+        CODE_UNAVAILABLE_TRANSIENT -> "KeyStore 暂时不可用，请稍后重试"
+        CODE_KEYS_NOT_PROVISIONED -> "设备密钥尚未预置"
+        CODE_RKP -> "远程密钥配置服务出错"
+        else -> "发生未知错误"
     }
 
     override fun fillInStackTrace() = this
