@@ -35,10 +35,18 @@ import io.github.vvb2060.keyattestation.attestation.AuthorizationList
 import io.github.vvb2060.keyattestation.attestation.RootOfTrust
 import io.github.vvb2060.keyattestation.repository.AttestationData
 import me.bmax.apatch.R
+import me.bmax.apatch.util.getRootShell
+import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 
 private fun execWithOutput(command: String): Pair<Int, String> {
     val result = getRootShell().newJob().add(command).exec()
