@@ -1,27 +1,37 @@
 package me.bmax.apatch.ui.screen
 
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +89,12 @@ private fun formatDate(date: Date?): String {
     return sdf.format(date)
 }
 
+private fun formatDateShort(date: Date?): String {
+    if (date == null) return "N/A"
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    return sdf.format(date)
+}
+
 private fun formatOsVersion(version: Int?): String {
     if (version == null) return "N/A"
     val major = (version shr 24) and 0xFF
@@ -102,9 +118,8 @@ private fun ecCurveToString(ecCurve: Int?): String {
 // ==================== Tab 枚举 ====================
 
 private enum class AttestationTab(val label: String) {
-    ATTESTATION("认证"),
-    CERTIFICATE("证书"),
-    LOAD("加载")
+    ATTESTATION("密钥认证"),
+    CERTIFICATE("证书详情")
 }
 
 // ==================== 主屏幕 ====================
@@ -148,19 +163,28 @@ fun KeyAttestationScreen(navigator: DestinationsNavigator) {
             TopAppBar(
                 title = {
                     Text(
-                        "密钥认证",
+                        "密钥认证检测",
                         fontWeight = FontWeight.Bold
                     )
+                },
+                navigationIcon = {
+                    IconButton(onClick = { navigator.popBackStack() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
                 ),
                 actions = {
-                    IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Outlined.FolderOpen, contentDescription = "加载")
-                    }
-                    IconButton(onClick = { viewModel.generateAttestation() }) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "刷新")
+                    IconButton(onClick = { /* 帮助信息 */ }) {
+                        Icon(
+                            Icons.Outlined.Info,
+                            contentDescription = "帮助信息",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             )
@@ -186,13 +210,16 @@ fun KeyAttestationScreen(navigator: DestinationsNavigator) {
             // 根据 Tab 显示不同内容
             when (selectedTab) {
                 AttestationTab.ATTESTATION -> {
-                    AttestationTabContent(viewModel, keyboxPickerLauncher)
+                    AttestationTabContent(
+                        viewModel,
+                        keyboxPickerLauncher,
+                        filePickerLauncher,
+                        fileSaverLauncher,
+                        context
+                    )
                 }
                 AttestationTab.CERTIFICATE -> {
                     CertificateTabContent(viewModel)
-                }
-                AttestationTab.LOAD -> {
-                    LoadTabContent(viewModel, fileSaverLauncher, filePickerLauncher, context)
                 }
             }
 
@@ -236,29 +263,16 @@ private fun SegmentedControl(
                     .weight(1f)
                     .clip(RoundedCornerShape(6.dp))
                     .background(bgColor)
+                    .clickable { onTabSelected(tab) }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    if (isSelected) {
-                        Icon(
-                            Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    Text(
-                        tab.label,
-                        color = textColor,
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
+                Text(
+                    tab.label,
+                    color = textColor,
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                )
             }
         }
     }
@@ -269,7 +283,10 @@ private fun SegmentedControl(
 @Composable
 private fun AttestationTabContent(
     viewModel: KeyAttestationViewModel,
-    keyboxPickerLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>
+    keyboxPickerLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    filePickerLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    fileSaverLauncher: androidx.activity.result.ActivityResultLauncher<String>,
+    context: android.content.Context
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -277,35 +294,36 @@ private fun AttestationTabContent(
         // 卡片1: KeyBox 管理
         KeyBoxManagementCard(viewModel, keyboxPickerLauncher)
 
-        // 卡片2: 引导加载程序状态
+        // 卡片2: 可信执行环境状态
         viewModel.attestationData?.let { data ->
-            BootloaderStatusCard(data)
+            TeeStatusCard(data)
         }
 
-        // 卡片3: 证书根信任状态
+        // 卡片3: 证书详情（可展开/收起）
         viewModel.attestationData?.let { data ->
-            CertificateRootTrustCard(data)
+            CertificateDetailExpandableCard(data)
         }
 
-        // 卡片4: 证书链
+        // 卡片4: 基本信息（两列布局）
         viewModel.attestationData?.let { data ->
-            CertificateChainCard(data)
+            BasicInfoGridCard(data)
         }
 
-        // 卡片5: 基本信息
+        // 卡片5: 授权列表（合并编号列表）
         viewModel.attestationData?.let { data ->
-            BasicInfoCard(data)
+            AuthorizationListCard(data)
         }
 
-        // 卡片6: 授权列表 - TEE 强制执行
-        viewModel.attestationData?.let { data ->
-            TeeEnforcedCard(data)
-        }
+        // 卡片6: 设备信息
+        DeviceInfoCard()
 
-        // 卡片7: 授权列表 - 软件强制执行
-        viewModel.attestationData?.let { data ->
-            SoftwareEnforcedCard(data)
-        }
+        // 操作按钮卡片
+        ActionButtonsCard(
+            viewModel = viewModel,
+            filePickerLauncher = filePickerLauncher,
+            fileSaverLauncher = fileSaverLauncher,
+            context = context
+        )
 
         // 错误显示
         viewModel.error?.let { error ->
@@ -382,108 +400,7 @@ private fun CertificateTabContent(viewModel: KeyAttestationViewModel) {
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            data.getCertificateInfos().forEachIndexed { index, certInfo ->
-                CertificateDetailCard(certInfo, index)
-            }
-        }
-    }
-}
-
-// ==================== 加载 Tab 内容 ====================
-
-@Composable
-private fun LoadTabContent(
-    viewModel: KeyAttestationViewModel,
-    fileSaverLauncher: androidx.activity.result.ActivityResultLauncher<String>,
-    filePickerLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    context: android.content.Context
-) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // 状态卡片
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // 生成认证按钮
-                Button(
-                    onClick = { viewModel.generateAttestation() },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(Icons.Outlined.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("生成认证")
-                }
-
-                // 保存证书按钮
-                OutlinedButton(
-                    onClick = {
-                        viewModel.certificateChain?.let {
-                            fileSaverLauncher.launch("attestation_${System.currentTimeMillis()}.bin")
-                        } ?: run {
-                            Toast.makeText(context, "暂无数据", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("保存证书")
-                }
-
-                // 加载证书按钮
-                OutlinedButton(
-                    onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Outlined.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("加载证书")
-                }
-            }
-        }
-
-        // 认证状态
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    when {
-                        viewModel.attestationData != null && viewModel.error == null -> Icons.Filled.Check
-                        viewModel.error != null -> Icons.Outlined.Error
-                        else -> Icons.Outlined.Info
-                    },
-                    contentDescription = null,
-                    tint = when {
-                        viewModel.attestationData != null && viewModel.error == null -> Color(0xFF4CAF50)
-                        viewModel.error != null -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    when {
-                        viewModel.attestationData != null && viewModel.error == null -> "认证完成"
-                        viewModel.error != null -> "认证失败"
-                        else -> "准备生成认证"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
+            CertificateDetailExpandableCard(data)
         }
     }
 }
@@ -496,7 +413,8 @@ private fun KeyBoxManagementCard(
     keyboxPickerLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>
 ) {
     val keyboxStatus = viewModel.keyboxStatus
-    val keyboxContent = viewModel.keyboxContent
+    val isInstalled = !keyboxStatus.contains("不存在") && !keyboxStatus.contains("检测失败") && !keyboxStatus.contains("检测中")
+    val clipboardManager = LocalClipboardManager.current
 
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -505,7 +423,7 @@ private fun KeyBoxManagementCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 标题行：图标 + 标题 + 状态徽章
+            // 标题行：盾牌图标 + 标题 + 状态徽章
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -517,7 +435,7 @@ private fun KeyBoxManagementCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Filled.Key,
+                        Icons.Filled.Shield,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
@@ -533,19 +451,19 @@ private fun KeyBoxManagementCard(
                 // 状态徽章
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = if (keyboxStatus.contains("不存在") || keyboxStatus.contains("检测失败"))
-                        MaterialTheme.colorScheme.errorContainer
+                    color = if (isInstalled)
+                        Color(0xFFE3F2FD)
                     else
-                        Color(0xFFE8F5E9)
+                        MaterialTheme.colorScheme.errorContainer
                 ) {
                     Text(
-                        keyboxStatus,
+                        if (isInstalled) "已安装" else keyboxStatus,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                         fontSize = 11.sp,
-                        color = if (keyboxStatus.contains("不存在") || keyboxStatus.contains("检测失败"))
-                            MaterialTheme.colorScheme.error
+                        color = if (isInstalled)
+                            Color(0xFF1976D2)
                         else
-                            Color(0xFF4CAF50),
+                            MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -553,26 +471,19 @@ private fun KeyBoxManagementCard(
 
             HorizontalDivider()
 
-            // 路径行
+            // 包名行（带复制图标）
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Outlined.Folder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(8.dp))
                 Text(
-                    "路径",
+                    "包名",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(80.dp)
                 )
-                Spacer(Modifier.width(8.dp))
                 Text(
-                    "/data/data/com.ricky.store/keybox.xml",
+                    "com.google.android.gms",
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -580,67 +491,74 @@ private fun KeyBoxManagementCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
+                Icon(
+                    Icons.Outlined.ContentCopy,
+                    contentDescription = "复制",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable {
+                            clipboardManager.setText(AnnotatedString("com.google.android.gms"))
+                        }
+                )
             }
 
-            // 按钮行
+            // 版本行
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(
-                    onClick = { keyboxPickerLauncher.launch(arrayOf("*/*")) },
+                Text(
+                    "版本",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(80.dp)
+                )
+                Text(
+                    "1.0.0",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("替换 KeyBox", fontSize = 13.sp)
-                }
-
-                OutlinedButton(
-                    onClick = { viewModel.viewKeyBoxContent() },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Outlined.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("查看 KeyBox", fontSize = 13.sp)
-                }
+                )
             }
 
-            // KeyBox 内容展示
-            if (keyboxContent.isNotEmpty()) {
-                HorizontalDivider()
+            // 状态行（绿色圆点 + 运行中）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    "KeyBox 内容",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
+                    "状态",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(80.dp)
                 )
-                Spacer(Modifier.height(4.dp))
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        keyboxContent,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 15,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF4CAF50))
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "运行中",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF4CAF50)
+                )
             }
         }
     }
 }
 
-// ==================== 引导加载程序状态卡片 ====================
+// ==================== 可信执行环境状态卡片 ====================
 
 @Composable
-private fun BootloaderStatusCard(data: AttestationData) {
+private fun TeeStatusCard(data: AttestationData) {
     val attestation = data.getAttestation()
-    val rot = attestation.getRootOfTrust()
+    val securityLevel = attestation.getAttestationSecurityLevel()
+    val teeName = Attestation.securityLevelToString(securityLevel)
 
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -649,7 +567,7 @@ private fun BootloaderStatusCard(data: AttestationData) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 标题行
+            // 标题行：蓝色勾号盾牌图标
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -659,7 +577,7 @@ private fun BootloaderStatusCard(data: AttestationData) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Outlined.Lock,
+                        Icons.Filled.CheckCircle,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
@@ -667,7 +585,7 @@ private fun BootloaderStatusCard(data: AttestationData) {
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "引导加载程序状态",
+                    "可信执行环境状态",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -675,107 +593,92 @@ private fun BootloaderStatusCard(data: AttestationData) {
 
             HorizontalDivider()
 
-            // 当前状态
+            // TEE 名称
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "当前状态",
+                    "TEE 名称",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(100.dp)
                 )
-                Spacer(Modifier.weight(1f))
                 Text(
-                    if (rot != null && rot.isDeviceLocked) "引导加载程序已锁定" else "引导加载程序已解锁",
+                    teeName,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = if (rot != null && rot.isDeviceLocked) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-                )
-            }
-        }
-    }
-}
-
-// ==================== 证书根信任状态卡片 ====================
-
-@Composable
-private fun CertificateRootTrustCard(data: AttestationData) {
-    val certInfos = data.getCertificateInfos()
-    val rootIssuer = certInfos.lastOrNull()?.getIssuer()
-
-    val isTrusted = rootIssuer == RootPublicKey.Status.GOOGLE
-            || rootIssuer == RootPublicKey.Status.GOOGLE_RKP
-            || rootIssuer == RootPublicKey.Status.AOSP
-            || rootIssuer == RootPublicKey.Status.KNOX
-
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // 标题行
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Outlined.VerifiedUser,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    "证书根信任状态",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    modifier = Modifier.weight(1f)
                 )
             }
 
-            HorizontalDivider()
-
-            // 根证书状态
+            // 安全等级
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "根证书",
+                    "安全等级",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(100.dp)
                 )
-                Spacer(Modifier.weight(1f))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFE3F2FD)
+                ) {
+                    Text(
+                        teeName,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        fontSize = 11.sp,
+                        color = Color(0xFF1976D2),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // 认证状态
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    if (isTrusted) "根证书是已知可信的证书颁发机构"
-                    else "根证书不是已知可信的证书颁发机构",
+                    "认证状态",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(100.dp)
+                )
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "API 密钥已配置且有效",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isTrusted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF4CAF50)
                 )
             }
         }
     }
 }
 
-// ==================== 证书链卡片 ====================
+// ==================== 证书详情可展开/收起卡片 ====================
 
 @Composable
-private fun CertificateChainCard(data: AttestationData) {
+private fun CertificateDetailExpandableCard(data: AttestationData) {
     val certInfos = data.getCertificateInfos()
+    var expandedCerts by remember { mutableStateOf(setOf<Int>()) }
 
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 标题行
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -795,7 +698,7 @@ private fun CertificateChainCard(data: AttestationData) {
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "证书链 (${certInfos.size} 证书)",
+                    "证书详情 (${certInfos.size} 个证书)",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -803,26 +706,100 @@ private fun CertificateChainCard(data: AttestationData) {
 
             HorizontalDivider()
 
-            // 证书子卡片
+            // 每个证书可展开/收起
             certInfos.forEachIndexed { index, certInfo ->
+                val isExpanded = expandedCerts.contains(index)
                 val cert = certInfo.getCert()
-                Column(
+
+                // 证书标题行（始终可见）
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable {
+                            expandedCerts = if (isExpanded) {
+                                expandedCerts - index
+                            } else {
+                                expandedCerts + index
+                            }
+                        }
                         .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        "证书 #${index + 1}",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "证书 #${index + 1}",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        // X.509 蓝色标签
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFE3F2FD)
+                        ) {
+                            Text(
+                                "X.509",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                fontSize = 10.sp,
+                                color = Color(0xFF1976D2),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        // 有效 绿色徽章
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFE8F5E9)
+                        ) {
+                            Text(
+                                "有效",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                fontSize = 10.sp,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    // 展开/收起箭头
+                    Icon(
+                        Icons.Outlined.ExpandMore,
+                        contentDescription = if (isExpanded) "收起" else "展开",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(if (isExpanded) 180f else 0f)
                     )
-                    InfoRow("颁发于", cert.issuerX500Principal.name)
-                    InfoRow("不早于", formatDate(cert.notBefore))
-                    InfoRow("不晚于", formatDate(cert.notAfter))
                 }
+
+                // 展开后的详细内容
+                AnimatedVisibility(
+                    visible = isExpanded,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // 序列号（冒号分隔 hex）
+                        CertInfoRow("序列号", formatSerialNumber(cert.serialNumber.toByteArray()))
+                        // 颁发者
+                        CertInfoRow("颁发者", cert.issuerX500Principal.name)
+                        // 有效期
+                        CertInfoRow("有效期", "${formatDateShort(cert.notBefore)} 至 ${formatDateShort(cert.notAfter)}")
+                        // 签名算法
+                        CertInfoRow("签名算法", cert.sigAlgName)
+                    }
+                }
+
                 if (index < certInfos.size - 1) {
                     Spacer(Modifier.height(4.dp))
                 }
@@ -831,39 +808,44 @@ private fun CertificateChainCard(data: AttestationData) {
     }
 }
 
-// ==================== 证书详情卡片（证书 Tab） ====================
+// ==================== 格式化序列号（冒号分隔 hex） ====================
+
+private fun formatSerialNumber(bytes: ByteArray): String {
+    return bytes.joinToString(":") { "%02X".format(it) }
+}
+
+// ==================== 证书信息行 ====================
 
 @Composable
-private fun CertificateDetailCard(certInfo: CertificateInfo, index: Int) {
-    val cert = certInfo.getCert()
-
-    Card(
-        modifier = Modifier.fillMaxWidth()
+private fun CertInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.Top
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                "证书 #${index + 1}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            HorizontalDivider()
-            InfoRow("颁发于", cert.issuerX500Principal.name)
-            InfoRow("主体", cert.subjectX500Principal.name)
-            InfoRow("不早于", formatDate(cert.notBefore))
-            InfoRow("不晚于", formatDate(cert.notAfter))
-            InfoRow("序列号", cert.serialNumber.toString(16).uppercase())
-        }
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(70.dp)
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
-// ==================== 基本信息卡片 ====================
+// ==================== 基本信息卡片（两列布局） ====================
 
 @Composable
-private fun BasicInfoCard(data: AttestationData) {
+private fun BasicInfoGridCard(data: AttestationData) {
     val attestation = data.getAttestation()
+    val rot = attestation.getRootOfTrust()
 
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -879,20 +861,255 @@ private fun BasicInfoCard(data: AttestationData) {
             )
             HorizontalDivider()
 
-            InfoRow("认证版本", Attestation.attestationVersionToString(attestation.attestationVersion))
-            InfoRow("安全等级", Attestation.securityLevelToString(attestation.getAttestationSecurityLevel()))
-            InfoRow("Keymaster 版本", Attestation.keymasterVersionToString(attestation.keymasterVersion))
-            InfoRow("Keymaster 安全等级", Attestation.securityLevelToString(attestation.keymasterSecurityLevel))
+            // 两列网格
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 第一行
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    GridInfoItem(
+                        label = "KeyMint 版本",
+                        value = Attestation.attestationVersionToString(attestation.attestationVersion),
+                        modifier = Modifier.weight(1f)
+                    )
+                    GridInfoItem(
+                        label = "Keymaster 版本",
+                        value = Attestation.keymasterVersionToString(attestation.keymasterVersion),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                // 第二行
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    GridInfoItem(
+                        label = "Verified Boot",
+                        value = if (rot != null) RootOfTrust.verifiedBootStateToString(rot.verifiedBootState) else "N/A",
+                        modifier = Modifier.weight(1f)
+                    )
+                    GridInfoItem(
+                        label = "启动状态",
+                        value = if (rot != null && rot.isDeviceLocked) "已锁定" else "已解锁",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                // 第三行
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val tee = attestation.getTeeEnforced()
+                    GridInfoItem(
+                        label = "安全补丁级别",
+                        value = if (tee != null) formatPatchLevel(tee.osPatchLevel) else "N/A",
+                        modifier = Modifier.weight(1f)
+                    )
+                    GridInfoItem(
+                        label = "系统补丁级别",
+                        value = if (tee != null) formatPatchLevel(tee.vendorPatchLevel) else "N/A",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
         }
     }
 }
 
-// ==================== TEE 强制执行卡片 ====================
+// ==================== 网格信息项 ====================
 
 @Composable
-private fun TeeEnforcedCard(data: AttestationData) {
+private fun GridInfoItem(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+// ==================== 授权列表卡片（合并编号列表） ====================
+
+@Composable
+private fun AuthorizationListCard(data: AttestationData) {
     val attestation = data.getAttestation()
     val tee = attestation.getTeeEnforced()
+    val sw = attestation.getSoftwareEnforced()
+
+    val items = mutableListOf<String>()
+    var index = 1
+
+    if (tee != null) {
+        tee.purposes?.let {
+            items.add("${index++}. 用途: ${AuthorizationList.purposesToString(it)}")
+        }
+        tee.algorithm?.let {
+            items.add("${index++}. 算法: ${AuthorizationList.algorithmToString(it)}")
+        }
+        tee.keySize?.let {
+            items.add("${index++}. 密钥大小: $it")
+        }
+        tee.digests?.let {
+            items.add("${index++}. 摘要: ${AuthorizationList.digestsToString(it)}")
+        }
+        tee.ecCurve?.let {
+            items.add("${index++}. EC 曲线: ${ecCurveToString(it)}")
+        }
+        if (tee.noAuthRequired != null) {
+            items.add("${index++}. 身份验证: 不需要身份验证")
+        }
+        tee.paddingModes?.let {
+            items.add("${index++}. 填充模式: ${AuthorizationList.paddingModesToString(it)}")
+        }
+        tee.rsaPublicExponent?.let {
+            items.add("${index++}. RSA 公钥指数: $it")
+        }
+        tee.mgfDigests?.let {
+            items.add("${index++}. MGF 摘要: ${AuthorizationList.digestsToString(it)}")
+        }
+        tee.rollbackResistance?.let {
+            items.add("${index++}. 回滚抵抗: $it")
+        }
+        tee.earlyBootOnly?.let {
+            items.add("${index++}. 仅早期启动: $it")
+        }
+        tee.activeDateTime?.let {
+            items.add("${index++}. 激活时间: ${formatDate(it)}")
+        }
+        tee.originationExpireDateTime?.let {
+            items.add("${index++}. 生成过期时间: ${formatDate(it)}")
+        }
+        tee.usageExpireDateTime?.let {
+            items.add("${index++}. 使用过期时间: ${formatDate(it)}")
+        }
+        tee.usageCountLimit?.let {
+            items.add("${index++}. 使用次数限制: $it")
+        }
+        tee.userAuthType?.let {
+            items.add("${index++}. 用户认证类型: $it")
+        }
+        tee.authTimeout?.let {
+            items.add("${index++}. 认证超时: ${it}秒")
+        }
+        tee.allowWhileOnBody?.let {
+            items.add("${index++}. 允许在身体上使用: $it")
+        }
+        tee.trustedUserPresenceReq?.let {
+            items.add("${index++}. 需要可信用户在场: $it")
+        }
+        tee.trustedConfirmationReq?.let {
+            items.add("${index++}. 需要可信确认: $it")
+        }
+        tee.unlockedDeviceReq?.let {
+            items.add("${index++}. 需要解锁设备: $it")
+        }
+        tee.allApplications?.let {
+            items.add("${index++}. 所有应用: $it")
+        }
+        tee.applicationId?.let {
+            items.add("${index++}. 应用 ID: $it")
+        }
+        tee.creationDateTime?.let {
+            items.add("${index++}. 创建时间: ${formatDate(it)}")
+        }
+        tee.origin?.let {
+            items.add("${index++}. 来源: ${AuthorizationList.originToString(it)}")
+        }
+        tee.rollbackResistant?.let {
+            items.add("${index++}. 回滚抵抗: $it")
+        }
+        tee.osVersion?.let {
+            items.add("${index++}. OS 版本: ${formatOsVersion(it)}")
+        }
+        tee.osPatchLevel?.let {
+            items.add("${index++}. OS 补丁级别: ${formatPatchLevel(it)}")
+        }
+        tee.vendorPatchLevel?.let {
+            items.add("${index++}. Vendor 补丁级别: ${formatPatchLevel(it)}")
+        }
+        tee.bootPatchLevel?.let {
+            items.add("${index++}. Boot 补丁级别: ${formatPatchLevel(it)}")
+        }
+        tee.brand?.let {
+            items.add("${index++}. 品牌: $it")
+        }
+        tee.device?.let {
+            items.add("${index++}. 设备: $it")
+        }
+        tee.product?.let {
+            items.add("${index++}. 产品: $it")
+        }
+        tee.serialNumber?.let {
+            items.add("${index++}. 序列号: $it")
+        }
+        tee.imei?.let {
+            items.add("${index++}. IMEI: $it")
+        }
+        tee.meid?.let {
+            items.add("${index++}. MEID: $it")
+        }
+        tee.manufacturer?.let {
+            items.add("${index++}. 制造商: $it")
+        }
+        tee.model?.let {
+            items.add("${index++}. 型号: $it")
+        }
+        tee.deviceUniqueAttestation?.let {
+            items.add("${index++}. 设备唯一认证: $it")
+        }
+        tee.identityCredentialKey?.let {
+            items.add("${index++}. 身份凭证密钥: $it")
+        }
+        tee.secondImei?.let {
+            items.add("${index++}. 第二 IMEI: $it")
+        }
+        tee.moduleHash?.let {
+            items.add("${index++}. 模块哈希: ${formatByteArray(it)}")
+        }
+    }
+
+    if (sw != null) {
+        sw.creationDateTime?.let {
+            items.add("${index++}. 创建时间: ${formatDate(it)}")
+        }
+        sw.applicationId?.let {
+            items.add("${index++}. 应用 ID: $it")
+        }
+        sw.attestationApplicationId?.let { appId ->
+            items.add("${index++}. 认证应用 ID: ${appId.toString()}")
+        }
+        sw.origin?.let {
+            items.add("${index++}. 来源: ${AuthorizationList.originToString(it)}")
+        }
+        sw.rollbackResistant?.let {
+            items.add("${index++}. 回滚抵抗: $it")
+        }
+        sw.allApplications?.let {
+            items.add("${index++}. 所有应用: $it")
+        }
+    }
+
+    attestation.uniqueId?.let {
+        items.add("${index++}. 唯一标识: ${String(it)}")
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -901,78 +1118,46 @@ private fun TeeEnforcedCard(data: AttestationData) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                "授权列表 — TEE 强制执行",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+            // 标题行
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.List,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "授权列表 (共 ${items.size} 项)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             HorizontalDivider()
 
-            if (tee != null) {
-                // 用途
-                tee.purposes?.let {
-                    InfoRow("用途", AuthorizationList.purposesToString(it))
-                }
-                // 算法
-                tee.algorithm?.let {
-                    InfoRow("算法", AuthorizationList.algorithmToString(it))
-                }
-                // 密钥大小
-                tee.keySize?.let {
-                    InfoRow("密钥大小", "$it bits")
-                }
-                // 摘要
-                tee.digests?.let {
-                    InfoRow("摘要", AuthorizationList.digestsToString(it))
-                }
-                // 椭圆曲线
-                tee.ecCurve?.let {
-                    InfoRow("椭圆曲线", ecCurveToString(it))
-                }
-                // 不需要身份验证
-                if (tee.noAuthRequired != null) {
-                    InfoRow("身份验证", "不需要身份验证")
-                }
-
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "信任根",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                // Root of Trust
-                val rot = tee.rootOfTrust
-                if (rot != null) {
-                    InfoRow("verifiedBootKey", formatByteArray(rot.verifiedBootKey))
-                    InfoRow("deviceLocked", if (rot.isDeviceLocked) "true" else "false")
-                    InfoRow("verifiedBootState", RootOfTrust.verifiedBootStateToString(rot.verifiedBootState))
-                    rot.verifiedBootHash?.let {
-                        InfoRow("verifiedBootHash", formatByteArray(it))
+            if (items.isNotEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items.forEach { item ->
+                        Text(
+                            item,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 1.dp)
+                        )
                     }
-                }
-
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "系统版本",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                // 系统版本
-                tee.osVersion?.let {
-                    InfoRow("osVersion", formatOsVersion(it))
-                }
-                tee.osPatchLevel?.let {
-                    InfoRow("osPatchLevel", formatPatchLevel(it))
-                }
-                tee.vendorPatchLevel?.let {
-                    InfoRow("Vendor补丁", formatPatchLevel(it))
-                }
-                tee.bootPatchLevel?.let {
-                    InfoRow("Boot补丁", formatPatchLevel(it))
                 }
             } else {
                 Text(
@@ -985,13 +1170,61 @@ private fun TeeEnforcedCard(data: AttestationData) {
     }
 }
 
-// ==================== 软件强制执行卡片 ====================
+// ==================== 设备信息卡片 ====================
 
 @Composable
-private fun SoftwareEnforcedCard(data: AttestationData) {
-    val attestation = data.getAttestation()
-    val sw = attestation.getSoftwareEnforced()
+private fun DeviceInfoCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 标题行：蓝色手机图标
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.PhoneAndroid,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "设备信息",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
+            HorizontalDivider()
+
+            InfoRow("品牌", Build.BRAND)
+            InfoRow("型号", Build.MODEL)
+            InfoRow("Android 版本", Build.VERSION.RELEASE)
+            InfoRow("安全补丁级别", Build.VERSION.SECURITY_PATCH)
+            InfoRow("设备标识符", Build.FINGERPRINT)
+        }
+    }
+}
+
+// ==================== 操作按钮卡片 ====================
+
+@Composable
+private fun ActionButtonsCard(
+    viewModel: KeyAttestationViewModel,
+    filePickerLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    fileSaverLauncher: androidx.activity.result.ActivityResultLauncher<String>,
+    context: android.content.Context
+) {
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -999,36 +1232,47 @@ private fun SoftwareEnforcedCard(data: AttestationData) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                "授权列表 — 软件强制执行",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            HorizontalDivider()
-
-            if (sw != null) {
-                // 创建时间
-                sw.creationDateTime?.let {
-                    InfoRow("创建时间", formatDate(it))
-                }
-                // 应用 ID
-                sw.applicationId?.let {
-                    InfoRow("应用 ID", it)
-                }
-                // 证书序列号 (从 attestationApplicationId)
-                sw.attestationApplicationId?.let { appId ->
-                    InfoRow("证书序列号", appId.toString())
-                }
-                // 唯一标识
-                attestation.uniqueId?.let {
-                    InfoRow("唯一标识", String(it))
-                }
-            } else {
-                Text(
-                    "暂无数据",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            // 生成认证按钮
+            Button(
+                onClick = { viewModel.generateAttestation() },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
                 )
+            ) {
+                Icon(Icons.Outlined.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("生成认证")
+            }
+
+            // 按钮行
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("加载证书", fontSize = 13.sp)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        viewModel.certificateChain?.let {
+                            fileSaverLauncher.launch("attestation_${System.currentTimeMillis()}.bin")
+                        } ?: run {
+                            Toast.makeText(context, "暂无数据", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("保存证书", fontSize = 13.sp)
+                }
             }
         }
     }
@@ -1048,7 +1292,7 @@ private fun InfoRow(label: String, value: String) {
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(120.dp)
+            modifier = Modifier.width(100.dp)
         )
         Text(
             value,
@@ -1100,7 +1344,7 @@ class KeyAttestationViewModel : ViewModel() {
                     )
                     val sizeBytes = sizeResult.second.trim().toLongOrNull() ?: 0
                     val sizeKB = if (sizeBytes > 1024) String.format("%.1f KB", sizeBytes / 1024.0) else "$sizeBytes B"
-                    keyboxStatus = "已存在 ($sizeKB)"
+                    keyboxStatus = "已安装 ($sizeKB)"
                 } else {
                     keyboxStatus = "不存在"
                 }
