@@ -3,8 +3,10 @@ package me.bmax.apatch.ui.screen
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,7 +34,9 @@ import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import io.github.vvb2060.keyattestation.attestation.Attestation
 import io.github.vvb2060.keyattestation.attestation.AuthorizationList
+import io.github.vvb2060.keyattestation.attestation.CertificateInfo
 import io.github.vvb2060.keyattestation.attestation.RootOfTrust
+import io.github.vvb2060.keyattestation.attestation.RootPublicKey
 import io.github.vvb2060.keyattestation.repository.AttestationData
 import me.bmax.apatch.R
 import me.bmax.apatch.util.getRootShell
@@ -43,6 +47,8 @@ import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.text.DateFormat
+import java.util.Date
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import android.security.keystore.KeyGenParameterSpec
@@ -116,20 +122,17 @@ fun KeyAttestationScreen(navigator: DestinationsNavigator) {
         ) {
             Spacer(Modifier.height(4.dp))
 
-            // 1. 密钥认证检测状态卡片
+            // 1. Attestation status card
             AttestationStatusCard(viewModel)
 
-            // 2. 操作按钮组：生成认证 + 保存证书
+            // 2. Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
                     onClick = { viewModel.generateAttestation() },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Filled.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -152,22 +155,32 @@ fun KeyAttestationScreen(navigator: DestinationsNavigator) {
                 }
             }
 
-            // 3. KeyBox 管理卡片
+            // 3. KeyBox management card
             KeyBoxManagementCard(viewModel, keyboxPickerLauncher)
 
-            // 4. 证书根信任状态卡片
+            // 4. Certificate root trust status
             viewModel.attestationData?.let { data ->
                 CertificateRootTrustCard(data)
             }
 
-            // 5. 引导加载程序状态卡片
+            // 5. Bootloader status
             viewModel.attestationData?.let { data ->
                 BootloaderStatusCard(data)
             }
 
-            // 6. 认证结果详情
+            // 6. Certificate chain
             viewModel.attestationData?.let { data ->
-                AttestationResultCard(data)
+                CertificateChainCard(data)
+            }
+
+            // 7. Attestation basic info
+            viewModel.attestationData?.let { data ->
+                AttestationInfoCard(data)
+            }
+
+            // 8. Authorization list
+            viewModel.attestationData?.let { data ->
+                AuthorizationListCard(data)
             }
 
             // Error Display
@@ -221,34 +234,39 @@ fun KeyAttestationScreen(navigator: DestinationsNavigator) {
     }
 }
 
-// ==================== 密钥认证检测状态卡片 ====================
+// ==================== Attestation Status Card ====================
 @Composable
 fun AttestationStatusCard(viewModel: KeyAttestationViewModel) {
-    val statusColor = when {
-        viewModel.attestationData != null && viewModel.error == null ->
-            MaterialTheme.colorScheme.primaryContainer
-        viewModel.error != null ->
-            MaterialTheme.colorScheme.errorContainer
-        else ->
-            MaterialTheme.colorScheme.surfaceVariant
+    val hasData = viewModel.attestationData != null && viewModel.error == null
+    val hasError = viewModel.error != null
+
+    val containerColor = when {
+        hasData -> MaterialTheme.colorScheme.primaryContainer
+        hasError -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
 
-    val statusIcon = when {
-        viewModel.attestationData != null && viewModel.error == null -> Icons.Filled.CheckCircle
-        viewModel.error != null -> Icons.Filled.Error
+    val icon = when {
+        hasData -> Icons.Filled.CheckCircle
+        hasError -> Icons.Filled.Error
         else -> Icons.Outlined.Info
     }
 
+    val iconTint = when {
+        hasData -> MaterialTheme.colorScheme.primary
+        hasError -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     val statusText = when {
-        viewModel.attestationData != null && viewModel.error == null ->
-            stringResource(R.string.ka_status_verified)
-        viewModel.error != null -> stringResource(R.string.ka_status_error)
+        hasData -> stringResource(R.string.ka_status_verified)
+        hasError -> stringResource(R.string.ka_status_error)
         else -> stringResource(R.string.ka_status_ready)
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = statusColor)
+        colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
         Row(
             modifier = Modifier
@@ -257,15 +275,10 @@ fun AttestationStatusCard(viewModel: KeyAttestationViewModel) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                statusIcon,
+                icon,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = when {
-                    viewModel.attestationData != null && viewModel.error == null ->
-                        MaterialTheme.colorScheme.primary
-                    viewModel.error != null -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                tint = iconTint
             )
             Spacer(Modifier.width(16.dp))
             Column {
@@ -283,18 +296,16 @@ fun AttestationStatusCard(viewModel: KeyAttestationViewModel) {
     }
 }
 
-// ==================== KeyBox 管理卡片 ====================
+// ==================== KeyBox Management Card ====================
 @Composable
 fun KeyBoxManagementCard(
     viewModel: KeyAttestationViewModel,
-    keyboxPickerLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>
+    keyboxPickerLauncher: ActivityResultLauncher<Array<String>>
 ) {
     val keyboxStatus = viewModel.keyboxStatus
     val keyboxContent = viewModel.keyboxContent
 
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -306,7 +317,6 @@ fun KeyBoxManagementCard(
             )
             HorizontalDivider()
 
-            // 当前状态
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -326,7 +336,6 @@ fun KeyBoxManagementCard(
                 )
             }
 
-            // 路径
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -348,7 +357,6 @@ fun KeyBoxManagementCard(
 
             Spacer(Modifier.height(4.dp))
 
-            // 操作按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -372,7 +380,6 @@ fun KeyBoxManagementCard(
                 }
             }
 
-            // KeyBox 内容展示
             if (keyboxContent.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 HorizontalDivider()
@@ -402,20 +409,86 @@ fun KeyBoxManagementCard(
     }
 }
 
-// ==================== 证书根信任状态卡片 ====================
+// ==================== Certificate Root Trust Card ====================
 @Composable
 fun CertificateRootTrustCard(data: AttestationData) {
-    val attestation = data.getAttestation()
     val certInfos = data.getCertificateInfos()
+    val rootCert = certInfos.lastOrNull()
+    val rootStatus = rootCert?.getIssuer() ?: RootPublicKey.Status.UNKNOWN
 
-    // 检测根证书颁发者
-    val rootIssuer = certInfos.lastOrNull()?.getIssuer()?.name ?: "Unknown"
+    // Determine if any cert in chain has error
+    val hasChainError = certInfos.any { it.getStatus() != CertificateInfo.CERT_NORMAL }
+
+    val (containerColor, iconTint, titleText, summaryText) = when {
+        hasChainError -> {
+            Quad(
+                MaterialTheme.colorScheme.errorContainer,
+                MaterialTheme.colorScheme.error,
+                stringResource(R.string.cert_chain_not_trusted),
+                stringResource(R.string.cert_chain_not_trusted_summary)
+            )
+        }
+        rootStatus == RootPublicKey.Status.GOOGLE -> {
+            Quad(
+                MaterialTheme.colorScheme.primaryContainer,
+                MaterialTheme.colorScheme.primary,
+                stringResource(R.string.google_root_cert),
+                stringResource(R.string.google_root_cert_summary)
+            )
+        }
+        rootStatus == RootPublicKey.Status.GOOGLE_RKP -> {
+            Quad(
+                MaterialTheme.colorScheme.primaryContainer,
+                MaterialTheme.colorScheme.primary,
+                stringResource(R.string.google_root_cert_rkp),
+                stringResource(R.string.google_root_cert_rkp_summary)
+            )
+        }
+        rootStatus == RootPublicKey.Status.KNOX -> {
+            Quad(
+                MaterialTheme.colorScheme.primaryContainer,
+                MaterialTheme.colorScheme.primary,
+                stringResource(R.string.knox_root_cert),
+                stringResource(R.string.knox_root_cert_summary)
+            )
+        }
+        rootStatus == RootPublicKey.Status.OEM -> {
+            Quad(
+                MaterialTheme.colorScheme.primaryContainer,
+                MaterialTheme.colorScheme.primary,
+                stringResource(R.string.oem_root_cert),
+                stringResource(R.string.oem_root_cert_summary)
+            )
+        }
+        rootStatus == RootPublicKey.Status.AOSP -> {
+            Quad(
+                MaterialTheme.colorScheme.tertiaryContainer,
+                MaterialTheme.colorScheme.tertiary,
+                stringResource(R.string.aosp_root_cert),
+                stringResource(R.string.aosp_root_cert_summary)
+            )
+        }
+        rootStatus == RootPublicKey.Status.UNKNOWN -> {
+            Quad(
+                MaterialTheme.colorScheme.tertiaryContainer,
+                MaterialTheme.colorScheme.tertiary,
+                stringResource(R.string.unknown_root_cert),
+                stringResource(R.string.unknown_root_cert_summary)
+            )
+        }
+        else -> {
+            Quad(
+                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.onSurfaceVariant,
+                stringResource(R.string.unknown_root_cert),
+                stringResource(R.string.unknown_root_cert_summary)
+            )
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
         Row(
             modifier = Modifier
@@ -427,229 +500,130 @@ fun CertificateRootTrustCard(data: AttestationData) {
                 Icons.Filled.Security,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = iconTint
             )
             Spacer(Modifier.width(16.dp))
             Column {
                 Text(
-                    stringResource(R.string.ka_cert_root_trust),
+                    titleText,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = iconTint
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    rootIssuer,
+                    summaryText,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
     }
 }
 
-// ==================== 引导加载程序状态卡片 ====================
+// ==================== Bootloader Status Card ====================
 @Composable
 fun BootloaderStatusCard(data: AttestationData) {
     val attestation = data.getAttestation()
     val rot = attestation.getRootOfTrust()
 
+    val isSoftwareLevel = data.isSoftwareLevel()
+
+    val (containerColor, iconTint, titleText) = when {
+        rot == null -> Triple(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            stringResource(R.string.bootloader_unknown)
+        )
+        !rot.isDeviceLocked && rot.verifiedBootState == RootOfTrust.KM_VERIFIED_BOOT_SELF_SIGNED -> Triple(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            stringResource(R.string.bootloader_user)
+        )
+        rot.isDeviceLocked -> Triple(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.primary,
+            stringResource(R.string.bootloader_locked)
+        )
+        else -> Triple(
+            MaterialTheme.colorScheme.tertiaryContainer,
+            MaterialTheme.colorScheme.tertiary,
+            stringResource(R.string.bootloader_unlocked)
+        )
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                stringResource(R.string.ka_bootloader_status),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            HorizontalDivider()
-
-            // 引导状态
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    stringResource(R.string.ka_boot_state_label),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                Icon(
+                    Icons.Filled.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = iconTint
                 )
-                Text(
-                    if (rot != null) bootStateToString(rot.verifiedBootState) else "N/A",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text(
+                        stringResource(R.string.ka_bootloader_status),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = iconTint
+                    )
+                    Text(
+                        titleText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
-            // Bootloader 锁定状态
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            if (isSoftwareLevel) {
+                HorizontalDivider()
                 Text(
-                    stringResource(R.string.ka_bootloader_label),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    if (rot != null && rot.isDeviceLocked)
-                        stringResource(R.string.ka_bootloader_locked)
-                    else
-                        stringResource(R.string.ka_bootloader_unlocked),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            // 验证启动密钥
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    stringResource(R.string.ka_verified_boot_key),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    if (rot != null) formatByteArray(rot.verifiedBootKey) else "N/A",
+                    stringResource(R.string.bootloader_summary_sw_level),
                     style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-
-            // 验证启动哈希
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    stringResource(R.string.ka_verified_boot_hash),
-                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    if (rot != null) formatByteArray(rot.verifiedBootHash) else "N/A",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
                 )
             }
         }
     }
 }
 
-// ==================== 认证结果详情卡片 ====================
+// ==================== Certificate Chain Card ====================
 @Composable
-fun AttestationResultCard(data: AttestationData) {
-    val attestation = data.getAttestation()
+fun CertificateChainCard(data: AttestationData) {
+    val certInfos = data.getCertificateInfos()
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // Basic Info Card
-        Card(
-            modifier = Modifier.fillMaxWidth()
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    stringResource(R.string.ka_basic_info),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                HorizontalDivider()
+            Text(
+                stringResource(R.string.cert_chain) + " (${certInfos.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                stringResource(R.string.cert_chain_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            HorizontalDivider()
 
-                AttestationItem(stringResource(R.string.ka_attest_version),
-                    Attestation.attestationVersionToString(attestation.getAttestationVersion()))
-                AttestationItem(stringResource(R.string.ka_attest_security),
-                    Attestation.securityLevelToString(attestation.getAttestationSecurityLevel()))
-                AttestationItem(stringResource(R.string.ka_km_version),
-                    Attestation.keymasterVersionToString(attestation.getKeymasterVersion()))
-                AttestationItem(stringResource(R.string.ka_km_security),
-                    Attestation.securityLevelToString(attestation.getKeymasterSecurityLevel()))
-            }
-        }
-
-        // Software Enforced Card
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    stringResource(R.string.ka_sw_enforced),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                HorizontalDivider()
-
-                AuthorizationListItems(attestation.getSoftwareEnforced())
-            }
-        }
-
-        // TEE Enforced Card
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    stringResource(R.string.ka_tee_enforced),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                HorizontalDivider()
-
-                AuthorizationListItems(attestation.getTeeEnforced())
-            }
-        }
-
-        // Certificate Chain Card
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    stringResource(R.string.ka_cert_chain),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                HorizontalDivider()
-
-                data.getCertificateInfos().forEachIndexed { index, certInfo ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            "${stringResource(R.string.ka_certificate)} #${index + 1}",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                        Text(
-                            "${stringResource(R.string.ka_issuer)}: ${certInfo.getIssuer().name}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            "${stringResource(R.string.ka_subject)}: ${certInfo.getCert().subjectX500Principal.name}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
+            certInfos.forEachIndexed { index, certInfo ->
+                CertificateItem(index, certInfo)
+                if (index < certInfos.size - 1) {
+                    Spacer(Modifier.height(4.dp))
                 }
             }
         }
@@ -657,7 +631,413 @@ fun AttestationResultCard(data: AttestationData) {
 }
 
 @Composable
-fun AttestationItem(label: String, value: String) {
+fun CertificateItem(index: Int, certInfo: CertificateInfo) {
+    val cert = certInfo.getCert()
+    val status = certInfo.getStatus()
+    val issuer = certInfo.getIssuer()
+
+    val statusIcon = when (status) {
+        CertificateInfo.CERT_NORMAL -> Icons.Filled.CheckCircle
+        CertificateInfo.CERT_SIGN -> Icons.Filled.Error
+        CertificateInfo.CERT_REVOKED -> Icons.Filled.Error
+        CertificateInfo.CERT_EXPIRED -> Icons.Filled.Error
+        else -> Icons.Outlined.Help
+    }
+
+    val statusTint = when (status) {
+        CertificateInfo.CERT_NORMAL -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "#${index + 1} ${stringResource(R.string.cert_info)}",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Icon(
+                statusIcon,
+                contentDescription = null,
+                tint = statusTint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        Text(
+            stringResource(R.string.cert_subject) + " " + cert.subjectX500Principal.name,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            stringResource(R.string.cert_not_before) + " " + formatDate(cert.notBefore),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            stringResource(R.string.cert_not_after) + " " + formatDate(cert.notAfter),
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        if (status != CertificateInfo.CERT_NORMAL && status != CertificateInfo.CERT_UNKNOWN) {
+            val errorText = when (status) {
+                CertificateInfo.CERT_SIGN -> stringResource(R.string.cert_error_sign)
+                CertificateInfo.CERT_REVOKED -> stringResource(R.string.cert_error_revoked)
+                CertificateInfo.CERT_EXPIRED -> stringResource(R.string.cert_error_expired)
+                else -> ""
+            }
+            certInfo.getSecurityException()?.let { ex ->
+                Text(
+                    "$errorText ${ex.message}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+// ==================== Attestation Info Card ====================
+@Composable
+fun AttestationInfoCard(data: AttestationData) {
+    val attestation = data.getAttestation()
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Attestation Version
+            AttestationInfoItem(
+                title = stringResource(R.string.attestation),
+                description = stringResource(R.string.attestation_version_description),
+                summary = stringResource(
+                    R.string.attestation_summary_format,
+                    Attestation.attestationVersionToString(attestation.getAttestationVersion()),
+                    Attestation.securityLevelToString(attestation.getAttestationSecurityLevel())
+                )
+            )
+
+            HorizontalDivider()
+
+            // Keymaster Version
+            AttestationInfoItem(
+                title = stringResource(R.string.ka_km_version),
+                description = stringResource(R.string.keymaster_version_description),
+                summary = stringResource(
+                    R.string.attestation_summary_format,
+                    Attestation.keymasterVersionToString(attestation.getKeymasterVersion()),
+                    Attestation.securityLevelToString(attestation.getKeymasterSecurityLevel())
+                )
+            )
+
+            HorizontalDivider()
+
+            // Attestation Challenge
+            val challenge = attestation.getAttestationChallenge()
+            AttestationInfoItem(
+                title = stringResource(R.string.attestation_challenge),
+                description = stringResource(R.string.attestation_challenge_description),
+                summary = if (challenge != null && challenge.isNotEmpty()) {
+                    val stringChallenge = String(challenge)
+                    if (challenge.contentEquals(stringChallenge.toByteArray())) {
+                        stringChallenge
+                    } else {
+                        android.util.Base64.encodeToString(challenge, android.util.Base64.DEFAULT)
+                    }
+                } else {
+                    stringResource(R.string.empty)
+                }
+            )
+
+            HorizontalDivider()
+
+            // Unique ID
+            val uniqueId = attestation.getUniqueId()
+            AttestationInfoItem(
+                title = stringResource(R.string.unique_id),
+                description = stringResource(R.string.unique_id_description),
+                summary = if (uniqueId != null && uniqueId.isNotEmpty()) {
+                    uniqueId.joinToString("") { "%02x".format(it) }
+                } else {
+                    stringResource(R.string.empty)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun AttestationInfoItem(title: String, description: String, summary: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            summary,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+// ==================== Authorization List Card ====================
+@Composable
+fun AuthorizationListCard(data: AttestationData) {
+    val attestation = data.getAttestation()
+    val swList = attestation.getSoftwareEnforced()
+    val teeList = attestation.getTeeEnforced()
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.authorization_list),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            HorizontalDivider()
+
+            // Software Enforced
+            if (swList != null && hasAuthorizationItems(swList)) {
+                Text(
+                    stringResource(R.string.sw_enforced),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AuthorizationListItems(swList)
+                Spacer(Modifier.height(8.dp))
+            }
+
+            // TEE Enforced
+            if (teeList != null && hasAuthorizationItems(teeList)) {
+                if (swList != null && hasAuthorizationItems(swList)) {
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(
+                    stringResource(R.string.tee_enforced),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AuthorizationListItems(teeList)
+            }
+        }
+    }
+}
+
+fun hasAuthorizationItems(list: AuthorizationList): Boolean {
+    return list.getPurposes() != null ||
+            list.getAlgorithm() != null ||
+            list.getKeySize() != null ||
+            list.getDigests() != null ||
+            list.getPaddingModes() != null ||
+            list.getEcCurve() != null ||
+            list.getRsaPublicExponent() != null ||
+            list.getMgfDigests() != null ||
+            list.getRollbackResistance() != null ||
+            list.getEarlyBootOnly() != null ||
+            list.getActiveDateTime() != null ||
+            list.getOriginationExpireDateTime() != null ||
+            list.getUsageExpireDateTime() != null ||
+            list.getUsageCountLimit() != null ||
+            list.getNoAuthRequired() != null ||
+            list.getUserAuthType() != null ||
+            list.getAuthTimeout() != null ||
+            list.getAllowWhileOnBody() != null ||
+            list.getTrustedUserPresenceReq() != null ||
+            list.getTrustedConfirmationReq() != null ||
+            list.getUnlockedDeviceReq() != null ||
+            list.getAllApplications() != null ||
+            list.getApplicationId() != null ||
+            list.getCreationDateTime() != null ||
+            list.getOrigin() != null ||
+            list.getRollbackResistant() != null ||
+            list.getRootOfTrust() != null ||
+            list.getOsVersion() != null ||
+            list.getOsPatchLevel() != null ||
+            list.getAttestationApplicationId() != null ||
+            list.getBrand() != null ||
+            list.getDevice() != null ||
+            list.getProduct() != null ||
+            list.getSerialNumber() != null ||
+            list.getImei() != null ||
+            list.getSecondImei() != null ||
+            list.getMeid() != null ||
+            list.getManufacturer() != null ||
+            list.getModel() != null ||
+            list.getVendorPatchLevel() != null ||
+            list.getBootPatchLevel() != null ||
+            list.getDeviceUniqueAttestation() != null ||
+            list.getIdentityCredentialKey() != null ||
+            list.getModuleHash() != null
+}
+
+@Composable
+fun AuthorizationListItems(list: AuthorizationList) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Use the same order as original KeyAttestation authorizationItemTitles
+        list.getPurposes()?.let {
+            AuthItem(stringResource(R.string.authorization_list_purpose), AuthorizationList.purposesToString(it))
+        }
+        list.getAlgorithm()?.let {
+            AuthItem(stringResource(R.string.authorization_list_algorithm), AuthorizationList.algorithmToString(it))
+        }
+        list.getKeySize()?.let {
+            AuthItem(stringResource(R.string.authorization_list_keySize), "$it")
+        }
+        list.getDigests()?.let {
+            AuthItem(stringResource(R.string.authorization_list_digest), AuthorizationList.digestsToString(it))
+        }
+        list.getPaddingModes()?.let {
+            AuthItem(stringResource(R.string.authorization_list_padding), AuthorizationList.paddingModesToString(it))
+        }
+        list.getEcCurve()?.let {
+            AuthItem(stringResource(R.string.authorization_list_ecCurve), AuthorizationList.ecCurveAsString(it))
+        }
+        list.getRsaPublicExponent()?.let {
+            AuthItem(stringResource(R.string.authorization_list_rsaPublicExponent), "$it")
+        }
+        list.getMgfDigests()?.let {
+            AuthItem(stringResource(R.string.authorization_list_mgfDigest), AuthorizationList.digestsToString(it))
+        }
+        list.getRollbackResistance()?.let {
+            AuthItem(stringResource(R.string.authorization_list_rollbackResistance), "")
+        }
+        list.getActiveDateTime()?.let {
+            AuthItem(stringResource(R.string.authorization_list_activeDateTime), AuthorizationList.formatDate(it))
+        }
+        list.getOriginationExpireDateTime()?.let {
+            AuthItem(stringResource(R.string.authorization_list_originationExpireDateTime), AuthorizationList.formatDate(it))
+        }
+        list.getUsageExpireDateTime()?.let {
+            AuthItem(stringResource(R.string.authorization_list_usageExpireDateTime), AuthorizationList.formatDate(it))
+        }
+        list.getUsageCountLimit()?.let {
+            AuthItem(stringResource(R.string.authorization_list_usageCountLimit), "$it")
+        }
+        list.getNoAuthRequired()?.let {
+            AuthItem(stringResource(R.string.authorization_list_noAuthRequired), "")
+        }
+        list.getUserAuthType()?.let {
+            AuthItem(stringResource(R.string.authorization_list_userAuthType), AuthorizationList.userAuthTypeToString(it))
+        }
+        list.getAuthTimeout()?.let {
+            AuthItem(stringResource(R.string.authorization_list_authTimeout), "$it")
+        }
+        list.getAllowWhileOnBody()?.let {
+            AuthItem(stringResource(R.string.authorization_list_allowWhileOnBody), "")
+        }
+        list.getTrustedUserPresenceReq()?.let {
+            AuthItem(stringResource(R.string.authorization_list_trustedUserPresenceRequired), "")
+        }
+        list.getTrustedConfirmationReq()?.let {
+            AuthItem(stringResource(R.string.authorization_list_trustedConfirmationRequired), "")
+        }
+        list.getUnlockedDeviceReq()?.let {
+            AuthItem(stringResource(R.string.authorization_list_unlockedDeviceRequired), "")
+        }
+        list.getAllApplications()?.let {
+            AuthItem(stringResource(R.string.authorization_list_allApplications), "")
+        }
+        list.getApplicationId()?.let {
+            AuthItem(stringResource(R.string.authorization_list_applicationId), it)
+        }
+        list.getCreationDateTime()?.let {
+            AuthItem(stringResource(R.string.authorization_list_creationDateTime), AuthorizationList.formatDate(it))
+        }
+        list.getOrigin()?.let {
+            AuthItem(stringResource(R.string.authorization_list_origin), AuthorizationList.originToString(it))
+        }
+        list.getRollbackResistant()?.let {
+            AuthItem(stringResource(R.string.authorization_list_rollbackResistant), "")
+        }
+        list.getRootOfTrust()?.let {
+            AuthItem(stringResource(R.string.authorization_list_rootOfTrust), it.toString())
+        }
+        list.getOsVersion()?.let {
+            AuthItem(stringResource(R.string.authorization_list_osVersion), "$it")
+        }
+        list.getOsPatchLevel()?.let {
+            AuthItem(stringResource(R.string.authorization_list_osPatchLevel), "$it")
+        }
+        list.getAttestationApplicationId()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationApplicationId), it.toString())
+        }
+        list.getBrand()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdBrand), it)
+        }
+        list.getDevice()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdDevice), it)
+        }
+        list.getProduct()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdProduct), it)
+        }
+        list.getSerialNumber()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdSerial), it)
+        }
+        list.getImei()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdImei), it)
+        }
+        list.getSecondImei()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdSecondImei), it)
+        }
+        list.getMeid()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdMeid), it)
+        }
+        list.getManufacturer()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdManufacturer), it)
+        }
+        list.getModel()?.let {
+            AuthItem(stringResource(R.string.authorization_list_attestationIdModel), it)
+        }
+        list.getVendorPatchLevel()?.let {
+            AuthItem(stringResource(R.string.authorization_list_vendorPatchLevel), "$it")
+        }
+        list.getBootPatchLevel()?.let {
+            AuthItem(stringResource(R.string.authorization_list_bootPatchLevel), "$it")
+        }
+        list.getEarlyBootOnly()?.let {
+            AuthItem(stringResource(R.string.authorization_list_earlyBootOnly), "")
+        }
+        list.getDeviceUniqueAttestation()?.let {
+            AuthItem(stringResource(R.string.authorization_list_deviceUniqueAttestation), "")
+        }
+        list.getIdentityCredentialKey()?.let {
+            AuthItem(stringResource(R.string.authorization_list_identityCredentialKey), "")
+        }
+        list.getModuleHash()?.let {
+            AuthItem(stringResource(R.string.authorization_list_moduleHash), it.joinToString("") { b -> "%02x".format(b) })
+        }
+    }
+}
+
+@Composable
+fun AuthItem(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
@@ -665,90 +1045,33 @@ fun AttestationItem(label: String, value: String) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
         )
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-fun AuthorizationListItems(list: AuthorizationList?) {
-    list?.let { authList ->
-        if (authList.purposes != null) {
-            AttestationItem(stringResource(R.string.ka_purposes), authList.purposes.toString())
+        if (value.isNotEmpty()) {
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1.5f)
+            )
         }
-        if (authList.algorithm != null) {
-            AttestationItem(stringResource(R.string.ka_algorithm),
-                algorithmToString(authList.algorithm))
-        }
-        if (authList.keySize != null) {
-            AttestationItem(stringResource(R.string.ka_key_size), "${authList.keySize} bits")
-        }
-        if (authList.digests != null) {
-            AttestationItem(stringResource(R.string.ka_digests), authList.digests.toString())
-        }
-        if (authList.paddingModes != null) {
-            AttestationItem(stringResource(R.string.ka_padding), authList.paddingModes.toString())
-        }
-        if (authList.origin != null) {
-            AttestationItem(stringResource(R.string.ka_origin), originToString(authList.origin))
-        }
-        if (authList.applicationId != null) {
-            AttestationItem(stringResource(R.string.ka_app_id), authList.applicationId.toString())
-        }
-        if (authList.creationDateTime != null) {
-            AttestationItem(stringResource(R.string.ka_creation_time),
-                authList.creationDateTime.toString())
-        }
-    } ?: run {
-        Text(
-            stringResource(R.string.ka_no_data),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
 // Helper functions
+private fun formatDate(date: Date?): String {
+    return date?.let { DateFormat.getDateTimeInstance().format(it) } ?: "N/A"
+}
+
 private fun formatByteArray(bytes: ByteArray?): String {
     if (bytes == null) return "N/A"
     return bytes.take(8).joinToString("") { "%02X".format(it) } +
             if (bytes.size > 8) "..." else ""
 }
 
-private fun bootStateToString(state: Int): String {
-    return when (state) {
-        RootOfTrust.KM_VERIFIED_BOOT_VERIFIED -> "Verified"
-        RootOfTrust.KM_VERIFIED_BOOT_SELF_SIGNED -> "Self Signed"
-        RootOfTrust.KM_VERIFIED_BOOT_UNVERIFIED -> "Unverified"
-        RootOfTrust.KM_VERIFIED_BOOT_FAILED -> "Failed"
-        else -> "Unknown ($state)"
-    }
-}
-
-private fun algorithmToString(algorithm: Int): String {
-    return when (algorithm) {
-        AuthorizationList.KM_ALGORITHM_RSA -> "RSA"
-        AuthorizationList.KM_ALGORITHM_EC -> "EC"
-        AuthorizationList.KM_ALGORITHM_AES -> "AES"
-        AuthorizationList.KM_ALGORITHM_HMAC -> "HMAC"
-        else -> "Unknown ($algorithm)"
-    }
-}
-
-private fun originToString(origin: Int): String {
-    return when (origin) {
-        0 -> "Generated"
-        1 -> "Derived"
-        2 -> "Imported"
-        3 -> "Reserved"
-        else -> "Unknown ($origin)"
-    }
-}
+// Simple Quad data class for 4 values
+data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 class KeyAttestationViewModel : ViewModel() {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -765,7 +1088,7 @@ class KeyAttestationViewModel : ViewModel() {
     var isLoading by mutableStateOf(false)
         private set
 
-    // KeyBox 状态
+    // KeyBox status
     var keyboxStatus by mutableStateOf("检测中...")
         private set
 
@@ -783,7 +1106,6 @@ class KeyAttestationViewModel : ViewModel() {
                     "ls -la /data/adb/tricky_store/keybox.xml 2>/dev/null && echo EXISTS || echo NOT_FOUND"
                 )
                 if (output.contains("EXISTS")) {
-                    // 获取文件大小
                     val (_, sizeOutput) = execWithOutput(
                         "stat -c%s /data/adb/tricky_store/keybox.xml 2>/dev/null || echo 0"
                     )
@@ -817,16 +1139,13 @@ class KeyAttestationViewModel : ViewModel() {
     fun replaceKeyBox(context: android.content.Context, uri: Uri) {
         executor.execute {
             try {
-                // 从 URI 读取文件内容
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val content = inputStream?.readBytes() ?: throw Exception("无法读取文件")
                 inputStream.close()
 
-                // 写入到目标路径
                 val tempPath = "/data/local/tmp/keybox_temp.xml"
                 val targetPath = "/data/adb/tricky_store/keybox.xml"
 
-                // 先写入临时文件
                 val (writeCode, _) = execWithOutput(
                     "cat > $tempPath << 'KEYBOX_EOF'\n${String(content)}\nKEYBOX_EOF"
                 )
@@ -836,10 +1155,8 @@ class KeyAttestationViewModel : ViewModel() {
                     return@execute
                 }
 
-                // 确保目标目录存在
                 execWithOutput("mkdir -p /data/adb/tricky_store")
 
-                // 移动到目标位置
                 val (moveCode, _) = execWithOutput(
                     "cp $tempPath $targetPath && chmod 644 $targetPath && rm $tempPath"
                 )
@@ -847,7 +1164,6 @@ class KeyAttestationViewModel : ViewModel() {
                 if (moveCode == 0) {
                     keyboxStatus = "替换成功"
                     keyboxContent = ""
-                    // 重新检查状态
                     checkKeyBoxStatus()
                 } else {
                     keyboxStatus = "替换失败"
@@ -869,7 +1185,6 @@ class KeyAttestationViewModel : ViewModel() {
 
                 val alias = "folkpatch_attestation_${System.currentTimeMillis()}"
 
-                // Generate key pair with attestation
                 val keyPairGenerator = KeyPairGenerator.getInstance(
                     KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore"
                 )
@@ -885,11 +1200,9 @@ class KeyAttestationViewModel : ViewModel() {
                 keyPairGenerator.initialize(spec)
                 keyPairGenerator.generateKeyPair()
 
-                // Get certificate chain
                 val chain = keyStore.getCertificateChain(alias)
                 val certs = chain.map { it as X509Certificate }
 
-                // Parse using AttestationData
                 val result = AttestationData.parseCertificateChain(certs)
                 attestationData = result
                 certificateChain = result.getCertificateChainEncoded()
