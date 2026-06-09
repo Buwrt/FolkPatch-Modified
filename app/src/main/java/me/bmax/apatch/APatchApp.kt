@@ -344,6 +344,7 @@ class APApplication : Application(), Thread.UncaughtExceptionHandler, ImageLoade
     override fun onCreate() {
         super.onCreate()
         apApp = this
+        io.github.vvb2060.keyattestation.AppApplication.init(this)
         sharedPreferences = getSharedPreferences(SP_NAME, Context.MODE_PRIVATE)
         superKey = "su"
         val processName = getProcessNameCompat()
