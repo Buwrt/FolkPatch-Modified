@@ -1,7 +1,5 @@
 package io.github.vvb2060.keyattestation.attestation;
 
-import com.google.common.io.BaseEncoding;
-
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1TaggedObject;
 
@@ -72,6 +70,14 @@ public class KnoxAttestation extends Asn1Attestation {
                 "\nID attestation: " + idAttest +
                 "\nChallenge: " + challenge +
                 "\nIntegrity status: " + knoxIntegrity +
-                "\nAttestation record hash: " + BaseEncoding.base16().lowerCase().encode(recordHash);
+                "\nAttestation record hash: " + hexEncode(recordHash);
+    }
+
+    private static String hexEncode(byte[] data) {
+        var sb = new StringBuilder(data.length * 2);
+        for (byte b : data) {
+            sb.append(String.format("%02x", b & 0xFF));
+        }
+        return sb.toString();
     }
 }

@@ -18,12 +18,10 @@ package io.github.vvb2060.keyattestation.attestation;
 
 import android.util.Base64;
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.io.BaseEncoding;
-
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 
 import co.nstant.in.cbor.CborException;
@@ -181,7 +179,7 @@ public abstract class Attestation {
             s.append(" (base64): [" + Base64.encodeToString(attestationChallenge, 0) + "]");
         }
         if (uniqueId != null) {
-            s.append("\nUnique ID: [" + BaseEncoding.base16().lowerCase().encode(uniqueId) + "]");
+            s.append("\nUnique ID: [" + hexEncode(uniqueId) + "]");
         }
 
         s.append("\n-- SW enforced --");
@@ -193,15 +191,31 @@ public abstract class Attestation {
     }
 
     Set<String> retrieveUnexpectedExtensionOids(X509Certificate x509Cert) {
-        return new ImmutableSet.Builder<String>()
-                .addAll(x509Cert.getCriticalExtensionOIDs()
-                        .stream()
-                        .filter(s -> !KEY_USAGE_OID.equals(s))
-                        .iterator())
-                .addAll(x509Cert.getNonCriticalExtensionOIDs()
-                        .stream()
-                        .filter(s -> !ASN1_OID.equals(s) && !EAT_OID.equals(s))
-                        .iterator())
-                .build();
+        var set = new HashSet<String>();
+        var criticalOids = x509Cert.getCriticalExtensionOIDs();
+        if (criticalOids != null) {
+            for (var s : criticalOids) {
+                if (!KEY_USAGE_OID.equals(s)) {
+                    set.add(s);
+                }
+            }
+        }
+        var nonCriticalOids = x509Cert.getNonCriticalExtensionOIDs();
+        if (nonCriticalOids != null) {
+            for (var s : nonCriticalOids) {
+                if (!ASN1_OID.equals(s) && !EAT_OID.equals(s)) {
+                    set.add(s);
+                }
+            }
+        }
+        return Set.copyOf(set);
+    }
+
+    private static String hexEncode(byte[] data) {
+        var sb = new StringBuilder(data.length * 2);
+        for (byte b : data) {
+            sb.append(String.format("%02x", b & 0xFF));
+        }
+        return sb.toString();
     }
 }

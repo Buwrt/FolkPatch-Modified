@@ -16,16 +16,8 @@
 
 package io.github.vvb2060.keyattestation.attestation;
 
-import static com.google.common.base.Functions.forMap;
-import static com.google.common.collect.Collections2.transform;
-
 import android.security.keystore.KeyProperties;
 import android.util.Log;
-
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.common.io.BaseEncoding;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Sequence;
@@ -33,9 +25,11 @@ import org.bouncycastle.asn1.ASN1TaggedObject;
 
 import java.security.cert.CertificateParsingException;
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import co.nstant.in.cbor.model.DataItem;
@@ -159,39 +153,36 @@ public class AuthorizationList {
 	public static final int KM_TAG_MODULE_HASH = KM_BYTES | 724;
 
     // Map for converting padding values to strings
-    private static final ImmutableMap<Integer, String> paddingMap = ImmutableMap
-            .<Integer, String>builder()
-            .put(KM_PAD_NONE, KeyProperties.ENCRYPTION_PADDING_NONE)
-            .put(KM_PAD_RSA_OAEP, KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
-            .put(KM_PAD_RSA_PSS, KeyProperties.SIGNATURE_PADDING_RSA_PSS)
-            .put(KM_PAD_RSA_PKCS1_1_5_ENCRYPT, KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1)
-            .put(KM_PAD_RSA_PKCS1_1_5_SIGN, KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-            .put(KM_PAD_PKCS7, KeyProperties.ENCRYPTION_PADDING_PKCS7)
-            .build();
+    private static final Map<Integer, String> paddingMap = Map.of(
+            KM_PAD_NONE, KeyProperties.ENCRYPTION_PADDING_NONE,
+            KM_PAD_RSA_OAEP, KeyProperties.ENCRYPTION_PADDING_RSA_OAEP,
+            KM_PAD_RSA_PSS, KeyProperties.SIGNATURE_PADDING_RSA_PSS,
+            KM_PAD_RSA_PKCS1_1_5_ENCRYPT, KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1,
+            KM_PAD_RSA_PKCS1_1_5_SIGN, KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,
+            KM_PAD_PKCS7, KeyProperties.ENCRYPTION_PADDING_PKCS7
+    );
 
     // Map for converting digest values to strings
-    private static final ImmutableMap<Integer, String> digestMap = ImmutableMap
-            .<Integer, String>builder()
-            .put(KM_DIGEST_NONE, KeyProperties.DIGEST_NONE)
-            .put(KM_DIGEST_MD5, KeyProperties.DIGEST_MD5)
-            .put(KM_DIGEST_SHA1, KeyProperties.DIGEST_SHA1)
-            .put(KM_DIGEST_SHA_2_224, KeyProperties.DIGEST_SHA224)
-            .put(KM_DIGEST_SHA_2_256, KeyProperties.DIGEST_SHA256)
-            .put(KM_DIGEST_SHA_2_384, KeyProperties.DIGEST_SHA384)
-            .put(KM_DIGEST_SHA_2_512, KeyProperties.DIGEST_SHA512)
-            .build();
+    private static final Map<Integer, String> digestMap = Map.of(
+            KM_DIGEST_NONE, KeyProperties.DIGEST_NONE,
+            KM_DIGEST_MD5, KeyProperties.DIGEST_MD5,
+            KM_DIGEST_SHA1, KeyProperties.DIGEST_SHA1,
+            KM_DIGEST_SHA_2_224, KeyProperties.DIGEST_SHA224,
+            KM_DIGEST_SHA_2_256, KeyProperties.DIGEST_SHA256,
+            KM_DIGEST_SHA_2_384, KeyProperties.DIGEST_SHA384,
+            KM_DIGEST_SHA_2_512, KeyProperties.DIGEST_SHA512
+    );
 
     // Map for converting purpose values to strings
-    private static final ImmutableMap<Integer, String> purposeMap = ImmutableMap
-            .<Integer, String>builder()
-            .put(KM_PURPOSE_DECRYPT, "DECRYPT")
-            .put(KM_PURPOSE_ENCRYPT, "ENCRYPT")
-            .put(KM_PURPOSE_SIGN, "SIGN")
-            .put(KM_PURPOSE_VERIFY, "VERIFY")
-            .put(KM_PURPOSE_WRAP, "WRAP")
-            .put(KM_PURPOSE_AGREE_KEY, "AGREE KEY")
-            .put(KM_PURPOSE_ATTEST_KEY, "ATTEST KEY")
-            .build();
+    private static final Map<Integer, String> purposeMap = Map.of(
+            KM_PURPOSE_DECRYPT, "DECRYPT",
+            KM_PURPOSE_ENCRYPT, "ENCRYPT",
+            KM_PURPOSE_SIGN, "SIGN",
+            KM_PURPOSE_VERIFY, "VERIFY",
+            KM_PURPOSE_WRAP, "WRAP",
+            KM_PURPOSE_AGREE_KEY, "AGREE KEY",
+            KM_PURPOSE_ATTEST_KEY, "ATTEST KEY"
+    );
 
     private Integer securityLevel;
     private Set<Integer> purposes;
@@ -528,7 +519,7 @@ public class AuthorizationList {
     }
 
     private static String joinStrings(Collection<String> collection) {
-        return "[" + Joiner.on(", ").join(collection) + "]";
+        return "[" + String.join(", ", collection) + "]";
     }
 
     public static String formatDate(Date date) {
@@ -536,15 +527,21 @@ public class AuthorizationList {
     }
 
     public static String paddingModesToString(final Set<Integer> paddingModes) {
-        return joinStrings(transform(paddingModes, forMap(paddingMap, "Unknown")));
+        return joinStrings(paddingModes.stream()
+                .map(k -> paddingMap.getOrDefault(k, "Unknown"))
+                .toList());
     }
 
     public static String digestsToString(Set<Integer> digests) {
-        return joinStrings(transform(digests, forMap(digestMap, "Unknown")));
+        return joinStrings(digests.stream()
+                .map(k -> digestMap.getOrDefault(k, "Unknown"))
+                .toList());
     }
 
     public static String purposesToString(Set<Integer> purposes) {
-        return joinStrings(transform(purposes, forMap(purposeMap, "Unknown")));
+        return joinStrings(purposes.stream()
+                .map(k -> purposeMap.getOrDefault(k, "Unknown"))
+                .toList());
     }
 
     public static String algorithmToString(int algorithm) {
@@ -559,7 +556,7 @@ public class AuthorizationList {
     }
 
     public static String userAuthTypeToString(int userAuthType) {
-        List<String> types = Lists.newArrayList();
+        List<String> types = new ArrayList<>();
         if ((userAuthType & HW_AUTH_BIOMETRIC) != 0)
             types.add("Biometric");
         if ((userAuthType & HW_AUTH_PASSWORD) != 0)
@@ -938,8 +935,16 @@ public class AuthorizationList {
             s.append("\nModel: ").append(model);
         }
         if (moduleHash != null) {
-            s.append("\nModule Hash: ").append(BaseEncoding.base16().lowerCase().encode(moduleHash));
+            s.append("\nModule Hash: ").append(hexEncode(moduleHash));
         }
         return s.toString();
+    }
+
+    private static String hexEncode(byte[] data) {
+        var sb = new StringBuilder(data.length * 2);
+        for (byte b : data) {
+            sb.append(String.format("%02x", b & 0xFF));
+        }
+        return sb.toString();
     }
 }

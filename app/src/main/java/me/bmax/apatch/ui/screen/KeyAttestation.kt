@@ -34,13 +34,19 @@ import io.github.vvb2060.keyattestation.attestation.Attestation
 import io.github.vvb2060.keyattestation.attestation.AuthorizationList
 import io.github.vvb2060.keyattestation.attestation.RootOfTrust
 import io.github.vvb2060.keyattestation.repository.AttestationData
-import io.github.vvb2060.keyattestation.repository.AttestationRepository
 import me.bmax.apatch.R
 import me.bmax.apatch.util.getRootShell
+import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 
 /**
  * Execute a shell command via root shell and return (exitCode, stdout).
@@ -858,7 +864,34 @@ class KeyAttestationViewModel : ViewModel() {
 
         executor.execute {
             try {
-                val result = AttestationRepository.generateAttestation()
+                val keyStore = KeyStore.getInstance("AndroidKeyStore")
+                keyStore.load(null)
+
+                val alias = "folkpatch_attestation_${System.currentTimeMillis()}"
+
+                // Generate key pair with attestation
+                val keyPairGenerator = KeyPairGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore"
+                )
+
+                val spec = KeyGenParameterSpec.Builder(
+                    alias,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+                )
+                    .setDigests(KeyProperties.DIGEST_SHA256)
+                    .setSignatureScheme(KeyProperties.SIGNATURE_ECDSA)
+                    .setAttestationChallenge(byteArrayOf(1, 2, 3, 4))
+                    .build()
+
+                keyPairGenerator.initialize(spec)
+                keyPairGenerator.generateKeyPair()
+
+                // Get certificate chain
+                val chain = keyStore.getCertificateChain(alias)
+                val certs = chain.map { it as X509Certificate }
+
+                // Parse using AttestationData
+                val result = AttestationData.parseCertificateChain(certs)
                 attestationData = result
                 certificateChain = result.getCertificateChainEncoded()
                 error = null
@@ -886,7 +919,14 @@ class KeyAttestationViewModel : ViewModel() {
                 val bytes = inputStream.readBytes()
                 inputStream.close()
 
-                val result = AttestationRepository.loadAttestationData(bytes)
+                val factory = CertificateFactory.getInstance("X.509")
+                val certs = factory.generateCertificates(ByteArrayInputStream(bytes))
+                    .map { it as X509Certificate }
+                if (certs.isEmpty()) {
+                    throw Exception("No certificate found")
+                }
+
+                val result = AttestationData.parseCertificateChain(certs)
                 attestationData = result
                 certificateChain = bytes
                 error = null

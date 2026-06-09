@@ -16,8 +16,6 @@
 
 package io.github.vvb2060.keyattestation.attestation;
 
-import com.google.common.collect.ImmutableSet;
-
 import org.bouncycastle.asn1.ASN1Boolean;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Enumerated;
@@ -36,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.cert.CertificateParsingException;
 import java.util.Date;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.Set;
 
 public class Asn1Utils {
@@ -112,11 +111,11 @@ public class Asn1Utils {
                     "Expected set, found " + set.getClass().getName());
         }
 
-        ImmutableSet.Builder<Integer> builder = ImmutableSet.builder();
+        var result = new HashSet<Integer>();
         for (Enumeration<?> e = ((ASN1Set) set).getObjects(); e.hasMoreElements();) {
-            builder.add(getIntegerFromAsn1((ASN1Integer) e.nextElement()));
+            result.add(getIntegerFromAsn1((ASN1Integer) e.nextElement()));
         }
-        return builder.build();
+        return Set.copyOf(result);
     }
 
     public static String getStringFromAsn1OctetStreamAssumingUTF8(ASN1Encodable encodable)

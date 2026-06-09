@@ -20,8 +20,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.Signature;
 
-import com.google.common.io.BaseEncoding;
-
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
@@ -107,7 +105,7 @@ public class AttestationApplicationId implements java.lang.Comparable<Attestatio
         int noOfSigs = signatureDigests.size();
         for (byte[] sig : signatureDigests) {
             sb.append("Certificate sha256 digest " + i++ + "/" + noOfSigs + ":\n");
-            sb.append(BaseEncoding.base16().lowerCase().encode(sig));
+            sb.append(hexEncode(sig));
             sb.append('\n');
         }
         return sb.toString();
@@ -178,5 +176,13 @@ public class AttestationApplicationId implements java.lang.Comparable<Attestatio
             }
             return res;
         }
+    }
+
+    private static String hexEncode(byte[] data) {
+        var sb = new StringBuilder(data.length * 2);
+        for (byte b : data) {
+            sb.append(String.format("%02x", b & 0xFF));
+        }
+        return sb.toString();
     }
 }

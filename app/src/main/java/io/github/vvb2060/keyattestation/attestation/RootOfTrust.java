@@ -16,8 +16,6 @@
 
 package io.github.vvb2060.keyattestation.attestation;
 
-import com.google.common.io.BaseEncoding;
-
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Sequence;
 
@@ -98,14 +96,22 @@ public class RootOfTrust {
     public String toString() {
         StringBuilder sb = new StringBuilder()
                 .append("verifiedBootKey: ")
-                .append(BaseEncoding.base16().lowerCase().encode(verifiedBootKey))
+                .append(hexEncode(verifiedBootKey))
                 .append("\ndeviceLocked: ")
                 .append(deviceLocked)
                 .append("\nverifiedBootState: ")
                 .append(verifiedBootStateToString(verifiedBootState));
         if (verifiedBootHash != null) {
             sb.append("\nverifiedBootHash: ")
-                    .append(BaseEncoding.base16().lowerCase().encode(verifiedBootHash));
+                    .append(hexEncode(verifiedBootHash));
+        }
+        return sb.toString();
+    }
+
+    private static String hexEncode(byte[] data) {
+        var sb = new StringBuilder(data.length * 2);
+        for (byte b : data) {
+            sb.append(String.format("%02x", b & 0xFF));
         }
         return sb.toString();
     }
