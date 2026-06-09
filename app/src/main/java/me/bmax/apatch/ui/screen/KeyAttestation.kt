@@ -879,7 +879,6 @@ class KeyAttestationViewModel : ViewModel() {
                     KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
                 )
                     .setDigests(KeyProperties.DIGEST_SHA256)
-                    .setSignatureScheme(KeyProperties.SIGNATURE_ECDSA)
                     .setAttestationChallenge(byteArrayOf(1, 2, 3, 4))
                     .build()
 

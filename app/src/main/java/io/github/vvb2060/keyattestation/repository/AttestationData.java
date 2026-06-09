@@ -115,7 +115,7 @@ public class AttestationData extends BaseData {
         return newList;
     }
 
-    static AttestationData parseCertificateChain(List<X509Certificate> certs) {
+    public static AttestationData parseCertificateChain(List<X509Certificate> certs) {
         var infoList = new ArrayList<CertificateInfo>(certs.size());
         CertificateInfo.parse(sortCerts(certs), infoList);
         var data = new AttestationData(infoList);
