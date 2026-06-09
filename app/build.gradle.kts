@@ -441,5 +441,10 @@ dependencies {
 
     implementation(libs.liquid)
 
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+    implementation("co.nstant.in:cbor:0.9")
+
+    implementation(project(":applist-detector"))
+
     compileOnly(libs.cxx)
 }
