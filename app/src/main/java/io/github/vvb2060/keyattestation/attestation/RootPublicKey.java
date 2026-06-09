@@ -77,7 +77,7 @@ public class RootPublicKey {
 
     private static Set<PublicKey> getOemPublicKey() {
         var resName = "android:array/vendor_required_attestation_certificates";
-        var res = AppApplication.app.getResources();
+        var res = AppApplication.getApp().getResources();
         // noinspection DiscouragedApi
         var id = res.getIdentifier(resName, null, null);
         if (id == 0) {

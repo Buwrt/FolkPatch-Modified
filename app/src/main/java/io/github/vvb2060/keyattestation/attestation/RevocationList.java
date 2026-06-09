@@ -43,7 +43,7 @@ public record RevocationList(String status, String reason) {
     private static JSONObject getStatus() {
         var statusUrl = "https://android.googleapis.com/attestation/status";
         var resName = "android:string/vendor_required_attestation_revocation_list_url";
-        var res = AppApplication.app.getResources();
+        var res = AppApplication.getApp().getResources();
         // noinspection DiscouragedApi
         var id = res.getIdentifier(resName, null, null);
         if (id != 0) {
