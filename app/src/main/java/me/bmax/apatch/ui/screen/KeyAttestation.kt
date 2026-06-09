@@ -5,12 +5,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -101,197 +101,150 @@ fun KeyAttestationScreen(navigator: DestinationsNavigator) {
                 title = { Text(stringResource(R.string.key_attestation)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
-                ),
-                actions = {
-                    IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Outlined.FolderOpen, contentDescription = "Load")
-                    }
-                    IconButton(onClick = { viewModel.generateAttestation() }) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
-                    }
-                }
+                )
             )
         }
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Spacer(Modifier.height(4.dp))
+            item { Spacer(Modifier.height(4.dp)) }
 
-            // 1. Attestation status card
-            AttestationStatusCard(viewModel)
-
-            // 2. Action buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.generateAttestation() },
-                    modifier = Modifier.weight(1f)
+            // 1. Title bar with action buttons
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Filled.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.ka_generate))
+                    Button(
+                        onClick = { viewModel.generateAttestation() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Filled.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.ka_generate), fontSize = 13.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.certificateChain?.let {
+                                fileSaverLauncher.launch("attestation_${System.currentTimeMillis()}.bin")
+                            } ?: run {
+                                Toast.makeText(context, context.getString(R.string.ka_no_data), Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.ka_save), fontSize = 13.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.ka_load), fontSize = 13.sp)
+                    }
                 }
+            }
 
-                OutlinedButton(
-                    onClick = {
-                        viewModel.certificateChain?.let {
-                            fileSaverLauncher.launch("attestation_${System.currentTimeMillis()}.bin")
-                        } ?: run {
-                            Toast.makeText(context, context.getString(R.string.ka_no_data), Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.ka_save))
+            // 2. KeyBox Management Card
+            item {
+                KeyBoxManagementCard(viewModel, keyboxPickerLauncher)
+            }
+
+            // 3. Bootloader Status Card
+            viewModel.attestationData?.let { data ->
+                item {
+                    BootloaderStatusCard(data)
                 }
             }
 
-            // 3. KeyBox management card
-            KeyBoxManagementCard(viewModel, keyboxPickerLauncher)
-
-            // 4. Certificate root trust status
+            // 4. Certificate Root Trust Status Card
             viewModel.attestationData?.let { data ->
-                CertificateRootTrustCard(data)
+                item {
+                    CertificateRootTrustCard(data)
+                }
             }
 
-            // 5. Bootloader status
+            // 5. Certificate Chain Card
             viewModel.attestationData?.let { data ->
-                BootloaderStatusCard(data)
+                item {
+                    CertificateChainCard(data)
+                }
             }
 
-            // 6. Certificate chain
+            // 6. Attestation Basic Info Card
             viewModel.attestationData?.let { data ->
-                CertificateChainCard(data)
+                item {
+                    AttestationInfoCard(data)
+                }
             }
 
-            // 7. Attestation basic info
+            // 7. Authorization List Card
             viewModel.attestationData?.let { data ->
-                AttestationInfoCard(data)
-            }
-
-            // 8. Authorization list
-            viewModel.attestationData?.let { data ->
-                AuthorizationListCard(data)
+                item {
+                    AuthorizationListCard(data)
+                }
             }
 
             // Error Display
             viewModel.error?.let { error ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.Error,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(Modifier.width(8.dp))
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Filled.Error,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    stringResource(R.string.ka_error),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
                             Text(
-                                stringResource(R.string.ka_error),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.error
+                                error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
                             )
                         }
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            error,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
                     }
                 }
             }
 
             // Loading Indicator
             if (viewModel.isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
             }
 
-            Spacer(Modifier.height(80.dp))
-        }
-    }
-}
-
-// ==================== Attestation Status Card ====================
-@Composable
-fun AttestationStatusCard(viewModel: KeyAttestationViewModel) {
-    val hasData = viewModel.attestationData != null && viewModel.error == null
-    val hasError = viewModel.error != null
-
-    val containerColor = when {
-        hasData -> MaterialTheme.colorScheme.primaryContainer
-        hasError -> MaterialTheme.colorScheme.errorContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-
-    val icon = when {
-        hasData -> Icons.Filled.CheckCircle
-        hasError -> Icons.Filled.Error
-        else -> Icons.Outlined.Info
-    }
-
-    val iconTint = when {
-        hasData -> MaterialTheme.colorScheme.primary
-        hasError -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    val statusText = when {
-        hasData -> stringResource(R.string.ka_status_verified)
-        hasError -> stringResource(R.string.ka_status_error)
-        else -> stringResource(R.string.ka_status_ready)
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = iconTint
-            )
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(
-                    stringResource(R.string.ka_detect_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    statusText,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
+            item { Spacer(Modifier.height(80.dp)) }
         }
     }
 }
@@ -319,26 +272,31 @@ fun KeyBoxManagementCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     stringResource(R.string.ka_keybox_current_status),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                val statusColor = when {
+                    keyboxStatus.contains("已替换") || keyboxStatus.contains("已存在") -> MaterialTheme.colorScheme.primary
+                    keyboxStatus.contains("不存在") || keyboxStatus.contains("Not found") || keyboxStatus.contains("失败") -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
                 Text(
                     keyboxStatus,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = if (keyboxStatus.contains("不存在") || keyboxStatus.contains("Not found"))
-                        MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.primary
+                    color = statusColor
                 )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     stringResource(R.string.ka_keybox_path_label),
@@ -351,7 +309,7 @@ fun KeyBoxManagementCard(
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(start = 8.dp)
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
 
@@ -409,118 +367,6 @@ fun KeyBoxManagementCard(
     }
 }
 
-// ==================== Certificate Root Trust Card ====================
-@Composable
-fun CertificateRootTrustCard(data: AttestationData) {
-    val certInfos = data.getCertificateInfos()
-    val rootCert = certInfos.lastOrNull()
-    val rootStatus = rootCert?.getIssuer() ?: RootPublicKey.Status.UNKNOWN
-
-    // Determine if any cert in chain has error
-    val hasChainError = certInfos.any { it.getStatus() != CertificateInfo.CERT_NORMAL }
-
-    val (containerColor, iconTint, titleText, summaryText) = when {
-        hasChainError -> {
-            Quad(
-                MaterialTheme.colorScheme.errorContainer,
-                MaterialTheme.colorScheme.error,
-                stringResource(R.string.cert_chain_not_trusted),
-                stringResource(R.string.cert_chain_not_trusted_summary)
-            )
-        }
-        rootStatus == RootPublicKey.Status.GOOGLE -> {
-            Quad(
-                MaterialTheme.colorScheme.primaryContainer,
-                MaterialTheme.colorScheme.primary,
-                stringResource(R.string.google_root_cert),
-                stringResource(R.string.google_root_cert_summary)
-            )
-        }
-        rootStatus == RootPublicKey.Status.GOOGLE_RKP -> {
-            Quad(
-                MaterialTheme.colorScheme.primaryContainer,
-                MaterialTheme.colorScheme.primary,
-                stringResource(R.string.google_root_cert_rkp),
-                stringResource(R.string.google_root_cert_rkp_summary)
-            )
-        }
-        rootStatus == RootPublicKey.Status.KNOX -> {
-            Quad(
-                MaterialTheme.colorScheme.primaryContainer,
-                MaterialTheme.colorScheme.primary,
-                stringResource(R.string.knox_root_cert),
-                stringResource(R.string.knox_root_cert_summary)
-            )
-        }
-        rootStatus == RootPublicKey.Status.OEM -> {
-            Quad(
-                MaterialTheme.colorScheme.primaryContainer,
-                MaterialTheme.colorScheme.primary,
-                stringResource(R.string.oem_root_cert),
-                stringResource(R.string.oem_root_cert_summary)
-            )
-        }
-        rootStatus == RootPublicKey.Status.AOSP -> {
-            Quad(
-                MaterialTheme.colorScheme.tertiaryContainer,
-                MaterialTheme.colorScheme.tertiary,
-                stringResource(R.string.aosp_root_cert),
-                stringResource(R.string.aosp_root_cert_summary)
-            )
-        }
-        rootStatus == RootPublicKey.Status.UNKNOWN -> {
-            Quad(
-                MaterialTheme.colorScheme.tertiaryContainer,
-                MaterialTheme.colorScheme.tertiary,
-                stringResource(R.string.unknown_root_cert),
-                stringResource(R.string.unknown_root_cert_summary)
-            )
-        }
-        else -> {
-            Quad(
-                MaterialTheme.colorScheme.surfaceVariant,
-                MaterialTheme.colorScheme.onSurfaceVariant,
-                stringResource(R.string.unknown_root_cert),
-                stringResource(R.string.unknown_root_cert_summary)
-            )
-        }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Filled.Security,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = iconTint
-            )
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(
-                    titleText,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = iconTint
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    summaryText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-    }
-}
-
 // ==================== Bootloader Status Card ====================
 @Composable
 fun BootloaderStatusCard(data: AttestationData) {
@@ -529,33 +375,30 @@ fun BootloaderStatusCard(data: AttestationData) {
 
     val isSoftwareLevel = data.isSoftwareLevel()
 
-    val (containerColor, iconTint, titleText) = when {
+    val (iconTint, titleText, descText) = when {
         rot == null -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant,
-            stringResource(R.string.bootloader_unknown)
+            stringResource(R.string.bootloader_unknown),
+            ""
         )
         !rot.isDeviceLocked && rot.verifiedBootState == RootOfTrust.KM_VERIFIED_BOOT_SELF_SIGNED -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            stringResource(R.string.bootloader_user)
+            MaterialTheme.colorScheme.primary,
+            stringResource(R.string.bootloader_user),
+            ""
         )
         rot.isDeviceLocked -> Triple(
-            MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.primary,
-            stringResource(R.string.bootloader_locked)
+            stringResource(R.string.bootloader_locked),
+            stringResource(R.string.ka_bootloader_locked)
         )
         else -> Triple(
-            MaterialTheme.colorScheme.tertiaryContainer,
             MaterialTheme.colorScheme.tertiary,
-            stringResource(R.string.bootloader_unlocked)
+            stringResource(R.string.bootloader_unlocked),
+            stringResource(R.string.ka_bootloader_unlocked)
         )
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -567,16 +410,15 @@ fun BootloaderStatusCard(data: AttestationData) {
                 Icon(
                     Icons.Filled.Lock,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(28.dp),
                     tint = iconTint
                 )
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
                         stringResource(R.string.ka_bootloader_status),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = iconTint
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
                         titleText,
@@ -598,6 +440,96 @@ fun BootloaderStatusCard(data: AttestationData) {
     }
 }
 
+// ==================== Certificate Root Trust Card ====================
+@Composable
+fun CertificateRootTrustCard(data: AttestationData) {
+    val certInfos = data.getCertificateInfos()
+    val rootCert = certInfos.lastOrNull()
+    val rootStatus = rootCert?.getIssuer() ?: RootPublicKey.Status.UNKNOWN
+
+    val hasChainError = certInfos.any { it.getStatus() != CertificateInfo.CERT_NORMAL }
+
+    val (iconTint, titleText, summaryText) = when {
+        hasChainError -> Triple(
+            MaterialTheme.colorScheme.error,
+            stringResource(R.string.cert_chain_not_trusted),
+            stringResource(R.string.cert_chain_not_trusted_summary)
+        )
+        rootStatus == RootPublicKey.Status.GOOGLE -> Triple(
+            MaterialTheme.colorScheme.primary,
+            stringResource(R.string.google_root_cert),
+            stringResource(R.string.google_root_cert_summary)
+        )
+        rootStatus == RootPublicKey.Status.GOOGLE_RKP -> Triple(
+            MaterialTheme.colorScheme.primary,
+            stringResource(R.string.google_root_cert_rkp),
+            stringResource(R.string.google_root_cert_rkp_summary)
+        )
+        rootStatus == RootPublicKey.Status.KNOX -> Triple(
+            MaterialTheme.colorScheme.primary,
+            stringResource(R.string.knox_root_cert),
+            stringResource(R.string.knox_root_cert_summary)
+        )
+        rootStatus == RootPublicKey.Status.OEM -> Triple(
+            MaterialTheme.colorScheme.primary,
+            stringResource(R.string.oem_root_cert),
+            stringResource(R.string.oem_root_cert_summary)
+        )
+        rootStatus == RootPublicKey.Status.AOSP -> Triple(
+            MaterialTheme.colorScheme.tertiary,
+            stringResource(R.string.aosp_root_cert),
+            stringResource(R.string.aosp_root_cert_summary)
+        )
+        rootStatus == RootPublicKey.Status.UNKNOWN -> Triple(
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            stringResource(R.string.unknown_root_cert),
+            stringResource(R.string.unknown_root_cert_summary)
+        )
+        else -> Triple(
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            stringResource(R.string.unknown_root_cert),
+            stringResource(R.string.unknown_root_cert_summary)
+        )
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.Security,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+                tint = iconTint
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    stringResource(R.string.ka_cert_root_trust),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    titleText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = iconTint
+                )
+                if (summaryText.isNotEmpty()) {
+                    Text(
+                        summaryText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ==================== Certificate Chain Card ====================
 @Composable
 fun CertificateChainCard(data: AttestationData) {
@@ -609,14 +541,9 @@ fun CertificateChainCard(data: AttestationData) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                stringResource(R.string.cert_chain) + " (${certInfos.size})",
+                stringResource(R.string.cert_chain) + " (${certInfos.size} ${stringResource(R.string.ka_certificate)})",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
-            )
-            Text(
-                stringResource(R.string.cert_chain_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             HorizontalDivider()
 
@@ -632,6 +559,7 @@ fun CertificateChainCard(data: AttestationData) {
 
 @Composable
 fun CertificateItem(index: Int, certInfo: CertificateInfo) {
+    var expanded by remember { mutableStateOf(false) }
     val cert = certInfo.getCert()
     val status = certInfo.getStatus()
     val issuer = certInfo.getIssuer()
@@ -654,7 +582,9 @@ fun CertificateItem(index: Int, certInfo: CertificateInfo) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { expanded = !expanded }
             .padding(12.dp)
+            .animateContentSize()
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -662,7 +592,7 @@ fun CertificateItem(index: Int, certInfo: CertificateInfo) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                "#${index + 1} ${stringResource(R.string.cert_info)}",
+                "#${index + 1} ${stringResource(R.string.ka_certificate)}",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -676,36 +606,58 @@ fun CertificateItem(index: Int, certInfo: CertificateInfo) {
 
         Spacer(Modifier.height(4.dp))
 
-        Text(
-            stringResource(R.string.cert_subject) + " " + cert.subjectX500Principal.name,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            stringResource(R.string.cert_not_before) + " " + formatDate(cert.notBefore),
-            style = MaterialTheme.typography.bodySmall
-        )
-        Text(
-            stringResource(R.string.cert_not_after) + " " + formatDate(cert.notAfter),
-            style = MaterialTheme.typography.bodySmall
-        )
+        // Always show: serial, issuer, validity
+        val serialNumber = cert.serialNumber?.toString(16)?.uppercase() ?: ""
+        InfoRow(label = stringResource(R.string.ka_issuer), value = cert.issuerX500Principal?.name ?: "")
+        InfoRow(label = stringResource(R.string.cert_not_before), value = formatDate(cert.notBefore))
+        InfoRow(label = stringResource(R.string.cert_not_after), value = formatDate(cert.notAfter))
 
-        if (status != CertificateInfo.CERT_NORMAL && status != CertificateInfo.CERT_UNKNOWN) {
-            val errorText = when (status) {
-                CertificateInfo.CERT_SIGN -> stringResource(R.string.cert_error_sign)
-                CertificateInfo.CERT_REVOKED -> stringResource(R.string.cert_error_revoked)
-                CertificateInfo.CERT_EXPIRED -> stringResource(R.string.cert_error_expired)
-                else -> ""
+        if (expanded) {
+            Spacer(Modifier.height(4.dp))
+            InfoRow(label = stringResource(R.string.ka_subject), value = cert.subjectX500Principal?.name ?: "")
+            if (serialNumber.isNotEmpty()) {
+                InfoRow(label = stringResource(R.string.ka_serial), value = serialNumber)
             }
-            certInfo.getSecurityException()?.let { ex ->
-                Text(
-                    "$errorText ${ex.message}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+
+            if (status != CertificateInfo.CERT_NORMAL && status != CertificateInfo.CERT_UNKNOWN) {
+                val errorText = when (status) {
+                    CertificateInfo.CERT_SIGN -> stringResource(R.string.cert_error_sign)
+                    CertificateInfo.CERT_REVOKED -> stringResource(R.string.cert_error_revoked)
+                    CertificateInfo.CERT_EXPIRED -> stringResource(R.string.cert_error_expired)
+                    else -> ""
+                }
+                certInfo.getSecurityException()?.let { ex ->
+                    Text(
+                        "$errorText ${ex.message}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.4f)
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(0.6f),
+            maxLines = if (value.length > 60) 2 else 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -719,10 +671,16 @@ fun AttestationInfoCard(data: AttestationData) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            Text(
+                stringResource(R.string.ka_basic_info),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            HorizontalDivider()
+
             // Attestation Version
             AttestationInfoItem(
-                title = stringResource(R.string.attestation),
-                description = stringResource(R.string.attestation_version_description),
+                title = stringResource(R.string.ka_attest_version),
                 summary = stringResource(
                     R.string.attestation_summary_format,
                     Attestation.attestationVersionToString(attestation.getAttestationVersion()),
@@ -735,7 +693,6 @@ fun AttestationInfoCard(data: AttestationData) {
             // Keymaster Version
             AttestationInfoItem(
                 title = stringResource(R.string.ka_km_version),
-                description = stringResource(R.string.keymaster_version_description),
                 summary = stringResource(
                     R.string.attestation_summary_format,
                     Attestation.keymasterVersionToString(attestation.getKeymasterVersion()),
@@ -749,7 +706,6 @@ fun AttestationInfoCard(data: AttestationData) {
             val challenge = attestation.getAttestationChallenge()
             AttestationInfoItem(
                 title = stringResource(R.string.attestation_challenge),
-                description = stringResource(R.string.attestation_challenge_description),
                 summary = if (challenge != null && challenge.isNotEmpty()) {
                     val stringChallenge = String(challenge)
                     if (challenge.contentEquals(stringChallenge.toByteArray())) {
@@ -761,42 +717,24 @@ fun AttestationInfoCard(data: AttestationData) {
                     stringResource(R.string.empty)
                 }
             )
-
-            HorizontalDivider()
-
-            // Unique ID
-            val uniqueId = attestation.getUniqueId()
-            AttestationInfoItem(
-                title = stringResource(R.string.unique_id),
-                description = stringResource(R.string.unique_id_description),
-                summary = if (uniqueId != null && uniqueId.isNotEmpty()) {
-                    uniqueId.joinToString("") { "%02x".format(it) }
-                } else {
-                    stringResource(R.string.empty)
-                }
-            )
         }
     }
 }
 
 @Composable
-fun AttestationInfoItem(title: String, description: String, summary: String) {
+fun AttestationInfoItem(title: String, summary: String) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            description,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         Text(
             summary,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -820,24 +758,8 @@ fun AuthorizationListCard(data: AttestationData) {
             )
             HorizontalDivider()
 
-            // Software Enforced
-            if (swList != null && hasAuthorizationItems(swList)) {
-                Text(
-                    stringResource(R.string.sw_enforced),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                AuthorizationListItems(swList)
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // TEE Enforced
+            // Show TEE and SW side by side or stacked
             if (teeList != null && hasAuthorizationItems(teeList)) {
-                if (swList != null && hasAuthorizationItems(swList)) {
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-                }
                 Text(
                     stringResource(R.string.tee_enforced),
                     style = MaterialTheme.typography.titleSmall,
@@ -845,6 +767,21 @@ fun AuthorizationListCard(data: AttestationData) {
                     color = MaterialTheme.colorScheme.primary
                 )
                 AuthorizationListItems(teeList)
+            }
+
+            if (swList != null && hasAuthorizationItems(swList)) {
+                if (teeList != null && hasAuthorizationItems(teeList)) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(
+                    stringResource(R.string.sw_enforced),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                AuthorizationListItems(swList)
             }
         }
     }
@@ -900,7 +837,6 @@ fun hasAuthorizationItems(list: AuthorizationList): Boolean {
 @Composable
 fun AuthorizationListItems(list: AuthorizationList) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // Use the same order as original KeyAttestation authorizationItemTitles
         list.getPurposes()?.let {
             AuthItem(stringResource(R.string.authorization_list_purpose), AuthorizationList.purposesToString(it))
         }
@@ -1064,15 +1000,6 @@ private fun formatDate(date: Date?): String {
     return date?.let { DateFormat.getDateTimeInstance().format(it) } ?: "N/A"
 }
 
-private fun formatByteArray(bytes: ByteArray?): String {
-    if (bytes == null) return "N/A"
-    return bytes.take(8).joinToString("") { "%02X".format(it) } +
-            if (bytes.size > 8) "..." else ""
-}
-
-// Simple Quad data class for 4 values
-data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
-
 class KeyAttestationViewModel : ViewModel() {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
@@ -1111,7 +1038,7 @@ class KeyAttestationViewModel : ViewModel() {
                     )
                     val sizeBytes = sizeOutput.trim().toLongOrNull() ?: 0
                     val sizeKB = if (sizeBytes > 1024) String.format("%.1f KB", sizeBytes / 1024.0) else "$sizeBytes B"
-                    keyboxStatus = "已存在 ($sizeKB)"
+                    keyboxStatus = "已替换 (1.0.0)"
                 } else {
                     keyboxStatus = "不存在"
                 }
