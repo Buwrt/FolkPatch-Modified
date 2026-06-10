@@ -574,7 +574,7 @@ fun KeyAttestationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.key_attestation_title)) },
+                title = { Text(stringResource(R.string.key_attestation)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1098,7 +1098,7 @@ fun CertificateChainItem(index: Int, cert: CertificateChainInfo) {
 }
 
 @Composable
-fun KAKAInfoRow(label: String, value: String) {
+fun KAInfoRow(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
