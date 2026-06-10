@@ -709,6 +709,22 @@ fun AttestationTab(viewModel: KeyAttestationViewModel) {
                 }
             }
 
+            // 设备信息卡片（始终显示）
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "设备信息",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    KAInfoRow("品牌", android.os.Build.BRAND ?: "Unknown")
+                    KAInfoRow("型号", android.os.Build.MODEL ?: "Unknown")
+                    KAInfoRow("Android 版本", android.os.Build.VERSION.RELEASE ?: "Unknown")
+                    KAInfoRow("安全补丁级别", android.os.Build.VERSION.SECURITY_PATCH ?: "Unknown")
+                    KAInfoRow("设备标识符", android.os.Build.FINGERPRINT ?: "Unknown")
+                }
+            }
+
             // ===== 生成的结果卡片（在按钮下方，用户往下滑查看）=====
             viewModel.attestationData?.let { data ->
                 // Certificate Root Trust Status
@@ -764,10 +780,10 @@ fun AttestationTab(viewModel: KeyAttestationViewModel) {
                             style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        InfoRow("认证版本", attestationVersionToString(data.attestationVersion))
-                        InfoRow("认证安全级别", securityLevelToString(data.attestationSecurityLevel))
-                        InfoRow("Keymaster 版本", keymasterVersionToString(data.keymasterVersion))
-                        InfoRow("Keymaster 安全级别", securityLevelToString(data.keymasterSecurityLevel))
+                        KAInfoRow("认证版本", attestationVersionToString(data.attestationVersion))
+                        KAInfoRow("认证安全级别", securityLevelToString(data.attestationSecurityLevel))
+                        KAInfoRow("Keymaster 版本", keymasterVersionToString(data.keymasterVersion))
+                        KAInfoRow("Keymaster 安全级别", securityLevelToString(data.keymasterSecurityLevel))
                     }
                 }
 
@@ -781,21 +797,21 @@ fun AttestationTab(viewModel: KeyAttestationViewModel) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         data.teeEnforced.purposes?.let { purposes ->
-                            InfoRow("用途", purposes.joinToString(", ") { purposeToString(it) })
+                            KAInfoRow("用途", purposes.joinToString(", ") { purposeToString(it) })
                         }
                         data.teeEnforced.algorithm?.let {
-                            InfoRow("算法", algorithmToString(it))
+                            KAInfoRow("算法", algorithmToString(it))
                         }
                         data.teeEnforced.keySize?.let {
-                            InfoRow("密钥大小", it.toString())
+                            KAInfoRow("密钥大小", it.toString())
                         }
                         data.teeEnforced.digests?.let { digests ->
-                            InfoRow("摘要", digests.joinToString(", ") { digestToString(it) })
+                            KAInfoRow("摘要", digests.joinToString(", ") { digestToString(it) })
                         }
                         data.teeEnforced.ecCurve?.let {
-                            InfoRow("椭圆曲线", ecCurveToString(it))
+                            KAInfoRow("椭圆曲线", ecCurveToString(it))
                         }
-                        InfoRow("不需要身份验证", data.teeEnforced.noAuthRequired.toString())
+                        KAInfoRow("不需要身份验证", data.teeEnforced.noAuthRequired.toString())
 
                         // Root of Trust
                         data.teeEnforced.rootOfTrust?.let { rootBytes ->
@@ -811,28 +827,28 @@ fun AttestationTab(viewModel: KeyAttestationViewModel) {
                             val vbKey = parseVerifiedBootKey(rootBytes)
                             val vbHash = parseVerifiedBootHash(rootBytes)
 
-                            InfoRow("DeviceLocked", deviceLocked.toString())
-                            InfoRow("VerifiedBootState", verifiedBootStateToString(vbState))
-                            InfoRow(
+                            KAInfoRow("DeviceLocked", deviceLocked.toString())
+                            KAInfoRow("VerifiedBootState", verifiedBootStateToString(vbState))
+                            KAInfoRow(
                                 "VerifiedBootKey",
                                 bytesToHex(vbKey).chunked(2).joinToString(":")
                                     .takeIf { it.length > 64 }
                                     ?: bytesToHex(vbKey)
                             )
                             vbHash?.let {
-                                InfoRow("VerifiedBootHash", bytesToHex(it))
+                                KAInfoRow("VerifiedBootHash", bytesToHex(it))
                             }
                         }
 
                         // Patch levels
                         data.teeEnforced.osPatchLevel?.let {
-                            InfoRow("系统补丁级别", patchLevelToString(it))
+                            KAInfoRow("系统补丁级别", patchLevelToString(it))
                         }
                         data.teeEnforced.vendorPatchLevel?.let {
-                            InfoRow("Vendor 补丁级别", patchLevelToString(it))
+                            KAInfoRow("Vendor 补丁级别", patchLevelToString(it))
                         }
                         data.teeEnforced.bootPatchLevel?.let {
-                            InfoRow("Boot 补丁级别", patchLevelToString(it))
+                            KAInfoRow("Boot 补丁级别", patchLevelToString(it))
                         }
 
                         // Application ID
@@ -863,16 +879,35 @@ fun AttestationTab(viewModel: KeyAttestationViewModel) {
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             data.softwareEnforced.purposes?.let { purposes ->
-                                InfoRow("用途", purposes.joinToString(", ") { purposeToString(it) })
+                                KAInfoRow("用途", purposes.joinToString(", ") { purposeToString(it) })
                             }
                             data.softwareEnforced.algorithm?.let {
-                                InfoRow("算法", algorithmToString(it))
+                                KAInfoRow("算法", algorithmToString(it))
                             }
                             data.softwareEnforced.osPatchLevel?.let {
-                                InfoRow("系统补丁级别", patchLevelToString(it))
+                                KAInfoRow("系统补丁级别", patchLevelToString(it))
                             }
                         }
                     }
+                }
+            }
+
+            // KeyBox 管理卡片（始终显示）
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "KeyBox 管理",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // KeyBox 状态
+                    val keyboxStatus = remember { mutableStateOf("检测中...") }
+                    LaunchedEffect(Unit) {
+                        val result = execWithOutput("ls -la /data/adb/tricky_store/keybox.xml 2>/dev/null && echo EXISTS || echo NOT_FOUND")
+                        keyboxStatus.value = if (result.second.contains("EXISTS")) "已存在" else "不存在"
+                    }
+                    KAInfoRow("状态", keyboxStatus.value)
+                    KAInfoRow("路径", "/data/adb/tricky_store/keybox.xml")
                 }
             }
         }
@@ -934,15 +969,15 @@ fun CertificateTab(viewModel: KeyAttestationViewModel) {
                                 )
                             }
                             Spacer(modifier = Modifier.height(8.dp))
-                            InfoRow("主题", cert.subject)
-                            InfoRow("颁发者", cert.issuer)
-                            InfoRow("序列号", cert.serialNumber.toString(16))
-                            InfoRow(
+                            KAInfoRow("主题", cert.subject)
+                            KAInfoRow("颁发者", cert.issuer)
+                            KAInfoRow("序列号", cert.serialNumber.toString(16))
+                            KAInfoRow(
                                 "有效期从",
                                 DateFormat.getDateTimeInstance()
                                     .format(cert.notBefore)
                             )
-                            InfoRow(
+                            KAInfoRow(
                                 "有效期至",
                                 DateFormat.getDateTimeInstance()
                                     .format(cert.notAfter)
@@ -1063,7 +1098,7 @@ fun CertificateChainItem(index: Int, cert: CertificateChainInfo) {
 }
 
 @Composable
-fun InfoRow(label: String, value: String) {
+fun KAKAInfoRow(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
